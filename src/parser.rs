@@ -11,26 +11,35 @@ const DOC_ASSERT_REQUEST: &str = "docassertrequest";
 const DOC_ASSERT_RESPONSE: &str = "docassertresponse";
 
 fn parse(path: String) -> Result<Vec<TestCase>, String> {
-    let test = fs::read_to_string(path)
+    fs::read_to_string(path)
         .map_err(|e| e.to_string())
-        .map(|content| to_mdast(content.as_str(), &markdown::ParseOptions::default()))
-        .map(|ast| get_code_blocks(ast.unwrap()))
-        .iter()
-        .flat_map(|v| v.iter())
-        .fold((vec![], vec![]), |(mut reqs, mut resps), code| {
-            if code.lang == Some(DOC_ASSERT_REQUEST.to_string()) {
-                reqs.push(get_request(code).unwrap());
-            } else if code.lang == Some(DOC_ASSERT_RESPONSE.to_string()) {
-                resps.push(get_response(code).unwrap());
-            }
-            (reqs, resps)
-        });
-    Ok(test.0.iter().zip(test.1.iter()).map(|(req, resp)| {
-        TestCase {
-            request: req.clone(),
-            response: resp.clone(),
-        }
-    }).collect::<Vec<TestCase>>())
+        .and_then(|content| to_mdast(content.as_str(), &markdown::ParseOptions::default()))
+        .map(|ast| get_code_blocks(ast))
+        .and_then(|codes| {
+            let (reqs, resps) = codes.iter()
+                .fold((vec![], vec![]), |(mut reqs, mut resps), code| {
+                    if code.lang == Some(DOC_ASSERT_REQUEST.to_string()) {
+                        reqs.push(get_request(code));
+                    } else if code.lang == Some(DOC_ASSERT_RESPONSE.to_string()) {
+                        resps.push(get_response(code));
+                    }
+                    (reqs, resps)
+                });
+            reqs.into_iter().collect::<Result<Vec<Request>, String>>()
+                .and_then(|reqs| {
+                    resps.into_iter()
+                        .collect::<Result<Vec<Response>, String>>()
+                        .map(|resps| (reqs, resps))
+                })
+        })
+        .map(|(reqs, resps)| {
+            reqs.iter().zip(resps.iter()).map(|(req, resp)| {
+                TestCase {
+                    request: req.clone(),
+                    response: resp.clone(),
+                }
+            }).collect::<Vec<TestCase>>()
+        })
 }
 
 fn get_request(code: &Code) -> Result<Request, String> {
