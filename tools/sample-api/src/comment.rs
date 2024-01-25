@@ -4,7 +4,7 @@ use rocket::serde::uuid::Uuid;
 
 
 #[post("/<blog_id>/comment", format = "json", data = "<comment>")]
-async fn new(blog_id: Uuid, comment: Json<Comment>, state: AllBlogs<'_>) -> Option<Json<BlogPost>> {
+async fn create(blog_id: Uuid, comment: Json<Comment>, state: AllBlogs<'_>) -> Option<Json<BlogPost>> {
     let mut blogs = state.lock().await;
     if let Some(saved_blog) = blogs.get_mut(&blog_id) {
         let mut comment = comment.into_inner();
@@ -81,6 +81,6 @@ async fn delete(blog_id: Uuid, comment_id: Uuid, state: AllBlogs<'_>) -> Option<
 
 pub fn stage() -> rocket::fairing::AdHoc {
     rocket::fairing::AdHoc::on_ignite("comments", |rocket| async {
-        rocket.mount("/blog", routes![new, update, get, delete])
+        rocket.mount("/blog", routes![create, update, get, delete])
     })
 }
