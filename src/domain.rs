@@ -43,5 +43,6 @@ pub struct Request {
 pub struct Response {
     pub code: i32,
     pub headers: HashMap<String, String>,
+    pub ignore: Vec<String>,
     pub body: Option<String>,
 }

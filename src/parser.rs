@@ -100,6 +100,7 @@ fn get_response(code: &Code) -> Result<Response, String> {
     Ok(Response {
         code: http_code,
         headers,
+        ignore: vec![],
         body,
     })
 }
