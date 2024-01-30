@@ -14,9 +14,9 @@ jobs:
     name: lint, build & test
     runs-on: ubuntu-latest
     steps:
-    - uses: actions-rs/cargo@v1
+    - uses: actions/checkout@v3
     - name: Format
-      run: cargo --all -- --check
+      run: cargo fmt --all -- --check
     - name: Lint
       run: cargo clippy # add `-- -D warnings` when ready
     - name: Build
