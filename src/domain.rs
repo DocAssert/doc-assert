@@ -10,10 +10,10 @@ pub struct TestCase {
 // TODO consider using client's enums?
 #[derive(Debug, Clone, PartialEq)]
 pub enum HttpMethod {
-    GET,
-    POST,
-    PUT,
-    DELETE,
+    Get,
+    Post,
+    Put,
+    Delete,
 }
 
 impl FromStr for HttpMethod {
@@ -21,10 +21,10 @@ impl FromStr for HttpMethod {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_uppercase().as_str() {
-            "GET" => Ok(HttpMethod::GET),
-            "POST" => Ok(HttpMethod::POST),
-            "PUT" => Ok(HttpMethod::PUT),
-            "DELETE" => Ok(HttpMethod::DELETE),
+            "GET" => Ok(HttpMethod::Get),
+            "POST" => Ok(HttpMethod::Post),
+            "PUT" => Ok(HttpMethod::Put),
+            "DELETE" => Ok(HttpMethod::Delete),
             _ => Err(format!("{} is not a valid http method", s)),
         }
     }

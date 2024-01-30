@@ -13,7 +13,6 @@ fn parse(path: String) -> Result<Vec<TestCase>, String> {
     let binding = fs::read_to_string(path).map_err(|e| e.to_string())?;
     let mut lines = binding.lines();
     while let Some(line) = lines.next() {
-        // todo refactor to push req/resp as func?
         if line.starts_with(DOC_ASSERT_REQUEST) {
             requests.push(get_request(get_code(&mut lines))?);
         }
@@ -29,17 +28,18 @@ fn parse(path: String) -> Result<Vec<TestCase>, String> {
         }
     }
     if requests.len() != responses.len() {
-        return Err(
-            format!(
-                "There is {} requests and {} responses but you need equal number of both",
-                requests.len(),
-                responses.len())
-        );
+        return Err(format!(
+            "There is {} requests and {} responses but you need equal number of both",
+            requests.len(),
+            responses.len()
+        ));
     }
-    let test_cases = requests.iter()
+    let test_cases = requests
+        .iter()
         .zip(responses.iter())
-        .map(|(req, resp)| {
-            TestCase { request: req.clone(), response: resp.clone() }
+        .map(|(req, resp)| TestCase {
+            request: req.clone(),
+            response: resp.clone(),
         })
         .collect::<Vec<TestCase>>();
     Ok(test_cases)
@@ -53,7 +53,7 @@ fn get_code(lines: &mut Lines) -> String {
         }
         buff.push_str(format!("{}\n", line).as_str());
     }
-    return buff;
+    buff
 }
 
 fn get_ignore_path(s: &str) -> Result<String, String> {
@@ -69,7 +69,9 @@ fn get_request(code: String) -> Result<Request, String> {
     let mut lines = code.lines();
 
     // Parse HTTP method and URL
-    let parts = lines.next().ok_or("Request line not found")
+    let parts = lines
+        .next()
+        .ok_or("Request line not found")
         .map(|line| line.split_whitespace().collect::<Vec<&str>>())?;
     if parts.len() != 2 {
         return Err(format!("Invalid request line {}", parts.join(" ")));
@@ -89,12 +91,16 @@ fn get_response(code: String) -> Result<Response, String> {
     let mut lines = code.lines();
 
     // Parse HTTP method and URL
-    let parts = lines.next().ok_or("Response code line not found")
+    let parts = lines
+        .next()
+        .ok_or("Response code line not found")
         .map(|line| line.split_whitespace().collect::<Vec<&str>>())?;
     if parts.len() != 2 {
         return Err(format!("Invalid response code line {}", parts.join(" ")));
     }
-    let http_code = parts[1].parse::<i32>().map_err(|_| "Invalid HTTP code".to_string())?;
+    let http_code = parts[1]
+        .parse::<i32>()
+        .map_err(|_| "Invalid HTTP code".to_string())?;
 
     let (headers, body) = get_headers_and_body(lines)?;
 
@@ -106,12 +112,14 @@ fn get_response(code: String) -> Result<Response, String> {
     })
 }
 
-fn get_headers_and_body(mut lines: Lines) -> Result<(HashMap<String, String>, Option<String>), String> {
+fn get_headers_and_body(
+    mut lines: Lines,
+) -> Result<(HashMap<String, String>, Option<String>), String> {
     let mut headers = HashMap::new();
     let mut body = String::new();
     for line in &mut lines {
-        if body.is_empty() && line.contains(":") && !line.contains("{") {
-            let header_parts = line.split(":").map(|s| s.trim()).collect::<Vec<&str>>();
+        if body.is_empty() && line.contains(':') && !line.contains('{') {
+            let header_parts = line.split(':').map(|s| s.trim()).collect::<Vec<&str>>();
             if header_parts.len() != 2 {
                 return Err(format!("Invalid header line {}", line));
             }
@@ -123,7 +131,11 @@ fn get_headers_and_body(mut lines: Lines) -> Result<(HashMap<String, String>, Op
     let body = if body.is_empty() {
         None
     } else {
-        Some(body.chars().filter(|c| !c.is_whitespace()).collect::<String>())
+        Some(
+            body.chars()
+                .filter(|c| !c.is_whitespace())
+                .collect::<String>(),
+        )
     };
     Ok((headers, body))
 }
@@ -139,14 +151,29 @@ mod tests {
         let test_cases = result.unwrap();
         assert_eq!(test_cases.len(), 1);
         // request
-        assert_eq!(test_cases[0].request.http_method, crate::domain::HttpMethod::POST);
+        assert_eq!(
+            test_cases[0].request.http_method,
+            crate::domain::HttpMethod::Post
+        );
         assert_eq!(test_cases[0].request.url, "/api/user");
-        assert_eq!(test_cases[0].request.headers.get("Content-Type").unwrap(), "application/json");
-        assert_eq!(test_cases[0].request.body.as_ref().unwrap(), "{\"name\":\"test\"}");
+        assert_eq!(
+            test_cases[0].request.headers.get("Content-Type").unwrap(),
+            "application/json"
+        );
+        assert_eq!(
+            test_cases[0].request.body.as_ref().unwrap(),
+            "{\"name\":\"test\"}"
+        );
         // response
         assert_eq!(test_cases[0].response.code, 201);
-        assert_eq!(test_cases[0].response.headers.get("Content-Type").unwrap(), "application/json");
-        assert_eq!(test_cases[0].response.body.as_ref().unwrap(), "{\"id\":1,\"name\":\"test\"}");
+        assert_eq!(
+            test_cases[0].response.headers.get("Content-Type").unwrap(),
+            "application/json"
+        );
+        assert_eq!(
+            test_cases[0].response.body.as_ref().unwrap(),
+            "{\"id\":1,\"name\":\"test\"}"
+        );
         assert_eq!(test_cases[0].response.ignore_paths[0], "id".to_string());
     }
 }
