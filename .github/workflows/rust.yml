@@ -11,11 +11,14 @@ env:
 
 jobs:
   build:
-
+    name: lint, build & test
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v3
+    - name: Format
+      run: cargo --all -- --check
+    - name: Lint
+      run: cargo clippy # add `-- -D warnings` when ready
     - name: Build
       run: cargo build --verbose
     - name: Run tests
