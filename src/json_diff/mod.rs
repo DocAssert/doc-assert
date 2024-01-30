@@ -2,7 +2,7 @@ mod misc;
 mod path;
 
 use misc::{Indent, Indexes};
-use path::{Key, Path};
+use path::{JSONPath, Key, Path};
 use serde_json::Value;
 use std::{collections::HashSet, fmt};
 
@@ -115,6 +115,10 @@ macro_rules! direct_compare {
     ($name:ident) => {
         fn $name(&mut self, lhs: &'a Value) {
             if self.rhs != lhs {
+                if self.config.to_ignore(&self.path) {
+                    return;
+                }
+
                 self.acc.push(Difference {
                     lhs: Some(lhs),
                     rhs: Some(&self.rhs),
@@ -381,7 +385,13 @@ fn fold_json<'a>(json: &'a Value, folder: &mut DiffFolder<'a, '_>) {
 mod test {
     #[allow(unused_imports)]
     use super::*;
-    use serde_json::json;
+    use serde_json::{json, Result, Value};
+    use std::fs;
+
+    fn load_json_from_file(file_path: &str) -> Result<Value> {
+        let data = fs::read_to_string(file_path).expect("Unable to read file");
+        serde_json::from_str(&data)
+    }
 
     #[test]
     fn test_diffing_leaf_json() {
@@ -606,5 +616,97 @@ mod test {
 
         let diffs = diff(&lhs, &rhs, config);
         assert_eq!(diffs.len(), 0);
+
+        // New test cases
+        // Test deeper nesting with ignored path
+        let lhs = json!({ "a": { "b": { "d": { "e": 3 } } } });
+        let rhs = json!({ "a": { "b": { "d": { "e": 4 } } } });
+        let ignore_path = Path::from_jsonpath("$.a.b.d.e").unwrap();
+
+        let config = Config::new(CompareMode::Strict).ignore_path(ignore_path);
+        let diffs = diff(&lhs, &rhs, config);
+        assert_eq!(diffs.len(), 0);
+
+        // Test array within deep object structure
+        let lhs = json!({ "a": { "b": [{ "d": [1, 2, 3] }] } });
+        let rhs = json!({ "a": { "b": [{ "d": [1, 2, 4] }] } });
+        let ignore_path = Path::from_jsonpath("$.a.b[*].d[*]").unwrap();
+
+        let config = Config::new(CompareMode::Strict).ignore_path(ignore_path);
+        let diffs = diff(&lhs, &rhs, config);
+        assert_eq!(diffs.len(), 0);
+
+        // Test with multiple ignore paths
+        let lhs = json!({ "a": { "x": 1, "y": 2, "z": 3 } });
+        let rhs = json!({ "a": { "x": 1, "y": 3, "z": 3 } });
+        let ignore_path1 = Path::from_jsonpath("$.a.x").unwrap();
+        let ignore_path2 = Path::from_jsonpath("$.a.y").unwrap();
+
+        let config = Config::new(CompareMode::Strict)
+            .ignore_path(ignore_path1)
+            .ignore_path(ignore_path2);
+        let diffs = diff(&lhs, &rhs, config);
+        assert_eq!(diffs.len(), 0);
+
+        // Test ignored path with non-matching element
+        let lhs = json!({ "a": { "b": 1, "c": 2 } });
+        let rhs = json!({ "a": { "b": 1, "c": 3 } });
+        let ignore_path = Path::from_jsonpath("$.a.d").unwrap();
+
+        let config = Config::new(CompareMode::Strict).ignore_path(ignore_path);
+        let diffs = diff(&lhs, &rhs, config);
+        assert_ne!(diffs.len(), 0);
+    }
+
+    #[test]
+    fn test_complex_jsons() {
+        let lhs_path = "tests/data/lhs.json";
+        let rhs_path = "tests/data/rhs.json";
+
+        let lhs_json = load_json_from_file(lhs_path).expect("Error parsing lhs.json");
+        let rhs_json = load_json_from_file(rhs_path).expect("Error parsing rhs.json");
+
+        let diffs = diff(&lhs_json, &rhs_json, Config::new(CompareMode::Inclusive));
+        assert_eq!(diffs.len(), 20);
+
+        let diffs = diff(
+            &lhs_json,
+            &rhs_json,
+            Config::new(CompareMode::Strict).ignore_path("$.user.name".jsonpath().unwrap()),
+        );
+        assert_eq!(diffs.len(), 19);
+
+        let diffs = diff(
+            &lhs_json,
+            &rhs_json,
+            Config::new(CompareMode::Strict)
+                .ignore_path("$.user.name".jsonpath().unwrap())
+                .ignore_path("$.user.profile.age".jsonpath().unwrap()),
+        );
+        assert_eq!(diffs.len(), 18);
+
+        let diffs = diff(
+            &lhs_json,
+            &rhs_json,
+            Config::new(CompareMode::Strict)
+                .ignore_path("$.user.name".jsonpath().unwrap())
+                .ignore_path("$.user.profile.age".jsonpath().unwrap())
+                .ignore_path("$.user.comments[*].timestamp".jsonpath().unwrap()),
+        );
+        assert_eq!(diffs.len(), 17);
+
+        let diffs = diff(
+            &lhs_json,
+            &rhs_json,
+            Config::new(CompareMode::Strict)
+                .ignore_path("$.user.name".jsonpath().unwrap())
+                .ignore_path("$.user.profile.age".jsonpath().unwrap())
+                .ignore_path("$.user.comments[*].*".jsonpath().unwrap()),
+        );
+        for diff in &diffs {
+            let path_str = format!("{}", diff.path);
+            assert!(!path_str.starts_with(".user.comments"))
+        }
+        assert_eq!(diffs.len(), 14);
     }
 }

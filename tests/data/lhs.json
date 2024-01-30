@@ -1,0 +1,34 @@
+{
+    "user": {
+      "id": 123,
+      "name": "Jane Smith",
+      "email": "janesmith@example.com",
+      "isActive": false,
+      "roles": ["user"],
+      "profile": {
+        "age": 28,
+        "address": {
+          "street": "456 Elm St",
+          "city": "Gotham",
+          "zip": "54321"
+        },
+        "preferences": {
+          "notifications": false,
+          "theme": "light"
+        }
+      },
+      "comments": [
+        { "id": 1, "text": "Updated comment", "timestamp": "2024-01-01T12:00:00Z" },
+        { "id": 3, "text": "New comment", "timestamp": "2024-01-03T14:45:00Z" }
+      ]
+    },
+    "system": {
+      "version": "1.3.0",
+      "lastUpdate": "2024-01-22T09:00:00Z",
+      "features": ["feature1", "feature2", "feature4"],
+      "maintenance": {
+        "scheduled": false,
+        "time": "2024-02-10T04:00:00Z"
+      }
+    }
+  }
