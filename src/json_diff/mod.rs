@@ -1,12 +1,14 @@
 mod misc;
+mod path;
 
 use misc::{Indent, Indexes};
+use path::{Key, Path};
 use serde_json::Value;
 use std::{collections::HashSet, fmt};
 
 /// Mode for how JSON values should be compared.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum CompareMode {
+pub(crate) enum CompareMode {
     /// The two JSON values don't have to be exactly equal. The "actual" value is only required to
     /// be "contained" inside "expected". See [crate documentation](index.html) for examples.
     ///
@@ -20,7 +22,7 @@ pub enum CompareMode {
 
 /// How should numbers be compared.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum NumericMode {
+pub(crate) enum NumericMode {
     /// Different numeric types aren't considered equal.
     Strict,
     /// All numeric types are converted to float before comparison.
@@ -30,7 +32,7 @@ pub enum NumericMode {
 /// Configuration for how JSON values should be compared.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(missing_copy_implementations)]
-pub struct Config<'a> {
+pub(crate) struct Config<'a> {
     pub(crate) compare_mode: CompareMode,
     pub(crate) numeric_mode: NumericMode,
     pub(crate) ignore_paths: Vec<Path<'a>>,
@@ -72,10 +74,9 @@ impl<'a> Config<'a> {
     pub fn to_ignore(&self, path: &Path<'a>) -> bool {
         self.ignore_paths.iter().any(|p| p.prefixes(path))
     }
-
 }
 
-pub fn diff<'a, 'b>(
+pub(crate) fn diff<'a, 'b>(
     lhs: &'a Value,
     rhs: &'a Value,
     config: Config<'a>,
@@ -365,83 +366,6 @@ impl<'a, 'b> fmt::Display for Difference<'a> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum Path<'a> {
-    Root,
-    Keys(Vec<Key<'a>>),
-}
-
-impl<'a> Path<'a> {
-    fn append(&self, next: Key<'a>) -> Path<'a> {
-        match self {
-            Path::Root => Path::Keys(vec![next]),
-            Path::Keys(list) => {
-                let mut copy = list.clone();
-                copy.push(next);
-                Path::Keys(copy)
-            }
-        }
-    }
-
-    fn prefixes(&self, other: &Path) -> bool {
-        match (self, other) {
-            (Path::Root, Path::Root) => true,
-            (Path::Root, Path::Keys(_)) => true,
-            (Path::Keys(_), Path::Root) => false,
-            (Path::Keys(lhs), Path::Keys(rhs)) => rhs.starts_with(lhs),
-        }
-    }
-
-    fn from_jsonpath(jsonpath: &'a str) -> Result<Self, Box<dyn std::error::Error>> {
-        if jsonpath == "$" {
-            return Ok(Path::Root);
-        }
-
-        let mut keys = Vec::new();
-        for segment in jsonpath.trim_matches('$').split(|c| c == '.' || c == '[').skip(1) {
-            if segment.ends_with(']') {
-                let index_str = &segment[..segment.len() - 1];
-                let index: usize = index_str.parse()?;
-                keys.push(Key::Idx(index));
-            } else {
-                keys.push(Key::Field(segment));
-            }
-        }
-
-        Ok(Path::Keys(keys))
-    }
-
-}
-
-impl<'a> fmt::Display for Path<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Path::Root => write!(f, "(root)"),
-            Path::Keys(keys) => {
-                for key in keys {
-                    write!(f, "{}", key)?;
-                }
-                Ok(())
-            }
-        }
-    }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-enum Key<'a> {
-    Idx(usize),
-    Field(&'a str),
-}
-
-impl<'a> fmt::Display for Key<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Key::Idx(idx) => write!(f, "[{}]", idx),
-            Key::Field(key) => write!(f, ".{}", key),
-        }
-    }
-}
-
 fn fold_json<'a>(json: &'a Value, folder: &mut DiffFolder<'a, '_>) {
     match json {
         Value::Null => folder.on_null(json),
@@ -676,11 +600,11 @@ mod test {
     fn test_object_deep_path() {
         let lhs = json!({ "a": { "b": [{"c": 0}, { "c": 1 }] } });
         let rhs = json!({ "a": { "b": [{"c": 0}, { "c": 2 }] } });
-        let ignore_path = Path::from_jsonpath("$.a.b[1].c").unwrap();
+        let ignore_path = Path::from_jsonpath("$.a.b[*].c").unwrap();
 
         let config = Config::new(CompareMode::Strict).ignore_path(ignore_path);
 
         let diffs = diff(&lhs, &rhs, config);
-        println!("{:#?}", diffs);
+        assert_eq!(diffs.len(), 0);
     }
 }
