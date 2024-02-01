@@ -1,5 +1,5 @@
 mod misc;
-mod path;
+pub mod path;
 
 use misc::{Indent, Indexes};
 use path::{JSONPath, Key, Path};
@@ -608,6 +608,13 @@ mod test {
 
     #[test]
     fn test_object_deep_path() {
+
+        let lhs = json!({ "id": 1, "name": "John" });
+        let rhs = json!({ "id": 2, "name": "John" });
+        let ignore_path = Path::from_jsonpath("$.id").unwrap();
+        let diffs = diff(&lhs, &rhs, Config::new(CompareMode::Strict).ignore_path(ignore_path));
+        assert_eq!(diffs.len(), 0);
+
         let lhs = json!({ "a": { "b": [{"c": 0}, { "c": 1 }] } });
         let rhs = json!({ "a": { "b": [{"c": 0}, { "c": 2 }] } });
         let ignore_path = Path::from_jsonpath("$.a.b[*].c").unwrap();

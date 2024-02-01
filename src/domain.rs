@@ -41,7 +41,7 @@ pub struct Request {
 
 #[derive(Debug, Clone)]
 pub struct Response {
-    pub code: i32,
+    pub code: u16,
     pub headers: HashMap<String, String>,
     pub ignore_paths: Vec<String>,
     pub body: Option<String>,

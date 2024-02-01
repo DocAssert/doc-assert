@@ -99,7 +99,7 @@ fn get_response(code: String) -> Result<Response, String> {
         return Err(format!("Invalid response code line {}", parts.join(" ")));
     }
     let http_code = parts[1]
-        .parse::<i32>()
+        .parse::<u16>()
         .map_err(|_| "Invalid HTTP code".to_string())?;
 
     let (headers, body) = get_headers_and_body(lines)?;
