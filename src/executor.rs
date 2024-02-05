@@ -1,17 +1,20 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
-use reqwest::{Body, Client, Method};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
+use reqwest::{Body, Client, Method};
 
 use crate::domain::{HttpMethod, TestCase};
-use crate::json_diff::{CompareMode, Config, diff};
 use crate::json_diff::path::Path;
+use crate::json_diff::{diff, CompareMode, Config};
 
-pub async fn execute(test_cases: TestCase) -> Result<(), String> {
+pub(crate) async fn execute(base_url: String, test_cases: TestCase) -> Result<(), String> {
     let test_request = test_cases.request;
     let mut request_builder = Client::new()
-        .request(map_method(test_request.http_method), test_request.url.as_str())
+        .request(
+            map_method(test_request.http_method),
+            format!("{}{}", base_url, test_request.uri),
+        )
         .headers(map_headers(&test_request.headers)?);
     if let Some(body) = test_request.body {
         request_builder = request_builder.body(Body::from(body));
@@ -43,8 +46,8 @@ pub async fn execute(test_cases: TestCase) -> Result<(), String> {
     if let Some(test_body) = test_response.body {
         let mut diff_config = Config::new(CompareMode::Strict);
         for path in test_response.ignore_paths.iter() {
-            diff_config = diff_config.ignore_path(Path::from_jsonpath(path.as_str())
-                .map_err(|e| e.to_string())?);
+            diff_config = diff_config
+                .ignore_path(Path::from_jsonpath(path.as_str()).map_err(|e| e.to_string())?);
         }
         let response_body = response.text().await.map_err(|e| e.to_string())?;
         let lhs = &serde_json::from_str::<serde_json::Value>(response_body.as_str())
@@ -53,10 +56,14 @@ pub async fn execute(test_cases: TestCase) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
         let diff_result = diff(lhs, rhs, diff_config);
         if !diff_result.is_empty() {
-            return Err(format!("Expected response differs from actual {}", diff_result.iter()
-                .map(|d| d.to_string())
-                .collect::<Vec<String>>()
-                .join(", ")));
+            return Err(format!(
+                "Expected response differs from actual {}",
+                diff_result
+                    .iter()
+                    .map(|d| d.to_string())
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ));
         }
     }
     Ok(())
@@ -65,10 +72,8 @@ pub async fn execute(test_cases: TestCase) -> Result<(), String> {
 fn map_headers(headers: &HashMap<String, String>) -> Result<HeaderMap, String> {
     let mut header_map = HeaderMap::new();
     for (key, value) in headers {
-        let header_name = HeaderName::from_str(key.clone().as_str())
-            .map_err(|e| e.to_string())?;
-        let header_value = HeaderValue::from_str(value.as_str())
-            .map_err(|e| e.to_string())?;
+        let header_name = HeaderName::from_str(key.clone().as_str()).map_err(|e| e.to_string())?;
+        let header_value = HeaderValue::from_str(value.as_str()).map_err(|e| e.to_string())?;
         header_map.insert(header_name, header_value);
     }
     Ok(header_map)
@@ -97,9 +102,12 @@ mod tests {
         let response_body = "{\"id\": 1, \"name\": \"John\"}";
         let response_status = 201;
         let mut server = mockito::Server::new();
-        server.mock("POST", users_endpoint)
+        server
+            .mock("POST", users_endpoint)
             .match_header(header_name, header_value)
-            .match_body(mockito::Matcher::PartialJsonString(request_body.to_string()))
+            .match_body(mockito::Matcher::PartialJsonString(
+                request_body.to_string(),
+            ))
             .with_header(header_name, header_value)
             .with_status(response_status)
             .with_body(response_body)
@@ -111,7 +119,7 @@ mod tests {
                 headers: vec![(header_name.to_string(), header_value.to_string())]
                     .into_iter()
                     .collect(),
-                url: format!("{}{}", server.url(), users_endpoint),
+                uri: users_endpoint.to_string(),
                 body: Some(request_body.to_string()),
             },
             response: Response {
@@ -123,10 +131,12 @@ mod tests {
                 body: Some(response_body.to_string()),
             },
         };
-        let result = execute(test_case).await;
+        let result = execute(server.url(), test_case).await;
         match result {
             Ok(_) => {}
-            Err(ref err) => { println!("{}", err) }
+            Err(ref err) => {
+                println!("{}", err)
+            }
         }
         assert!(result.is_ok());
     }
