@@ -36,6 +36,16 @@ impl DocAssert {
                 errors.push(e);
             }
         }
-        if errors.is_empty() { Ok(()) } else { Err(errors.join(",\n")) }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors.join(",\n"))
+        }
+    }
+}
+
+impl Default for DocAssert {
+    fn default() -> Self {
+        Self::new()
     }
 }
