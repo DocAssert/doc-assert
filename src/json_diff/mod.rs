@@ -76,7 +76,7 @@ impl<'a> Config<'a> {
     }
 }
 
-pub(crate) fn diff<'a, 'b>(
+pub(crate) fn diff<'a>(
     lhs: &'a Value,
     rhs: &'a Value,
     config: Config<'a>,
@@ -326,7 +326,7 @@ pub(crate) struct Difference<'a> {
     config: Config<'a>,
 }
 
-impl<'a, 'b> fmt::Display for Difference<'a> {
+impl<'a> fmt::Display for Difference<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let json_to_string = |json: &Value| serde_json::to_string_pretty(json).unwrap();
 

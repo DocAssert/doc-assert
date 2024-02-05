@@ -8,8 +8,6 @@ use crate::domain::{HttpMethod, TestCase};
 use crate::json_diff::{CompareMode, Config, diff};
 use crate::json_diff::path::Path;
 
-struct ExecutionResult {}
-
 pub async fn execute(test_cases: TestCase) -> Result<(), String> {
     let test_request = test_cases.request;
     let mut request_builder = Client::new()
@@ -87,30 +85,42 @@ fn map_method(http_method: HttpMethod) -> Method {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
     use crate::domain::{HttpMethod, Request, Response, TestCase};
     use crate::executor::execute;
 
     #[tokio::test]
     async fn test_execute() {
+        let users_endpoint = "/users";
+        let header_name = "Content-Type";
+        let header_value = "application/json";
+        let request_body = "{\"name\":\"test\"}";
+        let response_body = "{\"id\": 1, \"name\": \"John\"}";
+        let response_status = 201;
+        let mut server = mockito::Server::new();
+        server.mock("POST", users_endpoint)
+            .match_header(header_name, header_value)
+            .match_body(mockito::Matcher::PartialJsonString(request_body.to_string()))
+            .with_header(header_name, header_value)
+            .with_status(response_status)
+            .with_body(response_body)
+            .create();
+
         let test_case = TestCase {
             request: Request {
                 http_method: HttpMethod::Post,
-                headers: vec![("Content-Type".to_string(), "application/json".to_string())]
+                headers: vec![(header_name.to_string(), header_value.to_string())]
                     .into_iter()
                     .collect(),
-                url: "http://localhost:8081/user".to_string(),
-                body: Some("{\"name\":\"test\"}".to_string()),
+                url: format!("{}{}", server.url(), users_endpoint),
+                body: Some(request_body.to_string()),
             },
             response: Response {
-                code: 200,
-                // headers: vec![("Content-Type".to_string(), "application/json".to_string())]
-                //     .into_iter()
-                //     .collect(),
-                headers: HashMap::new(),
+                code: response_status as u16,
+                headers: vec![(header_name.to_string(), header_value.to_string())]
+                    .into_iter()
+                    .collect(),
                 ignore_paths: vec!["$.id".to_string()],
-                body: Some("{\"id\": 1, \"name\": \"John\"}".to_string()),
+                body: Some(response_body.to_string()),
             },
         };
         let result = execute(test_case).await;
