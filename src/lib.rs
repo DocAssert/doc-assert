@@ -29,7 +29,7 @@ impl DocAssert {
     pub async fn assert(mut self) -> Result<(), Vec<String>> {
         let url = self.url.take().expect("URL is required");
         let doc_path = self.doc_path.take().expect("Doc path is required");
-        let test_cases = parser::parse(doc_path)?;
+        let test_cases = parser::parse(doc_path).map_err(|e| vec![e])?;
         let mut errors = vec![];
         for tc in test_cases {
             if let Err(e) = executor::execute(url.clone(), tc).await {
