@@ -8,7 +8,7 @@ const DOC_ASSERT_REQUEST: &str = "```docassertrequest";
 const DOC_ASSERT_RESPONSE: &str = "```docassertresponse";
 const IGNORE_PREFIX: &str = "[ignore]";
 
-fn parse(path: String) -> Result<Vec<TestCase>, String> {
+pub(crate) fn parse(path: String) -> Result<Vec<TestCase>, String> {
     let (mut requests, mut responses) = (vec![], vec![]);
     let binding = fs::read_to_string(path).map_err(|e| e.to_string())?;
     let mut lines = binding.lines();
@@ -81,7 +81,7 @@ fn get_request(code: String) -> Result<Request, String> {
 
     Ok(Request {
         http_method: HttpMethod::from_str(parts[0])?,
-        url: parts[1].to_string(),
+        uri: parts[1].to_string(),
         headers,
         body,
     })
@@ -99,7 +99,7 @@ fn get_response(code: String) -> Result<Response, String> {
         return Err(format!("Invalid response code line {}", parts.join(" ")));
     }
     let http_code = parts[1]
-        .parse::<i32>()
+        .parse::<u16>()
         .map_err(|_| "Invalid HTTP code".to_string())?;
 
     let (headers, body) = get_headers_and_body(lines)?;
@@ -155,7 +155,7 @@ mod tests {
             test_cases[0].request.http_method,
             crate::domain::HttpMethod::Post
         );
-        assert_eq!(test_cases[0].request.url, "/api/user");
+        assert_eq!(test_cases[0].request.uri, "/api/user");
         assert_eq!(
             test_cases[0].request.headers.get("Content-Type").unwrap(),
             "application/json"

@@ -1,5 +1,5 @@
 mod misc;
-mod path;
+pub mod path;
 
 use misc::{Indent, Indexes};
 use path::{JSONPath, Key, Path};
@@ -76,11 +76,7 @@ impl<'a> Config<'a> {
     }
 }
 
-pub(crate) fn diff<'a, 'b>(
-    lhs: &'a Value,
-    rhs: &'a Value,
-    config: Config<'a>,
-) -> Vec<Difference<'a>> {
+pub(crate) fn diff<'a>(lhs: &'a Value, rhs: &'a Value, config: Config<'a>) -> Vec<Difference<'a>> {
     let mut acc = vec![];
     diff_with(lhs, rhs, config, Path::Root, &mut acc);
     acc
@@ -326,7 +322,7 @@ pub(crate) struct Difference<'a> {
     config: Config<'a>,
 }
 
-impl<'a, 'b> fmt::Display for Difference<'a> {
+impl<'a> fmt::Display for Difference<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let json_to_string = |json: &Value| serde_json::to_string_pretty(json).unwrap();
 
@@ -608,6 +604,16 @@ mod test {
 
     #[test]
     fn test_object_deep_path() {
+        let lhs = json!({ "id": 1, "name": "John" });
+        let rhs = json!({ "id": 2, "name": "John" });
+        let ignore_path = Path::from_jsonpath("$.id").unwrap();
+        let diffs = diff(
+            &lhs,
+            &rhs,
+            Config::new(CompareMode::Strict).ignore_path(ignore_path),
+        );
+        assert_eq!(diffs.len(), 0);
+
         let lhs = json!({ "a": { "b": [{"c": 0}, { "c": 1 }] } });
         let rhs = json!({ "a": { "b": [{"c": 0}, { "c": 2 }] } });
         let ignore_path = Path::from_jsonpath("$.a.b[*].c").unwrap();

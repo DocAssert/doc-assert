@@ -114,7 +114,7 @@ impl<'a> Path<'a> {
             }
         }
 
-        if token.contains(":") {
+        if token.contains(':') {
             let mut parts = token.split(':');
             let start: usize = parts.next().unwrap().parse()?;
             let end: usize = parts.next().unwrap().parse()?;
