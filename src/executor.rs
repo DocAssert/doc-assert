@@ -8,12 +8,12 @@ use crate::domain::{HttpMethod, TestCase};
 use crate::json_diff::path::Path;
 use crate::json_diff::{diff, CompareMode, Config};
 
-pub async fn execute(test_cases: TestCase) -> Result<(), String> {
+pub(crate) async fn execute(base_url: String, test_cases: TestCase) -> Result<(), String> {
     let test_request = test_cases.request;
     let mut request_builder = Client::new()
         .request(
             map_method(test_request.http_method),
-            test_request.url.as_str(),
+            format!("{}{}", base_url, test_request.uri),
         )
         .headers(map_headers(&test_request.headers)?);
     if let Some(body) = test_request.body {
@@ -119,7 +119,7 @@ mod tests {
                 headers: vec![(header_name.to_string(), header_value.to_string())]
                     .into_iter()
                     .collect(),
-                url: format!("{}{}", server.url(), users_endpoint),
+                uri: users_endpoint.to_string(),
                 body: Some(request_body.to_string()),
             },
             response: Response {
@@ -131,7 +131,7 @@ mod tests {
                 body: Some(response_body.to_string()),
             },
         };
-        let result = execute(test_case).await;
+        let result = execute(server.url(), test_case).await;
         match result {
             Ok(_) => {}
             Err(ref err) => {
