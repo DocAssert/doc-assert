@@ -26,7 +26,7 @@ impl DocAssert {
         self
     }
 
-    pub async fn assert(mut self) -> Result<(), String> {
+    pub async fn assert(mut self) -> Result<(), Vec<String>> {
         let url = self.url.take().expect("URL is required");
         let doc_path = self.doc_path.take().expect("Doc path is required");
         let test_cases = parser::parse(doc_path)?;
@@ -39,7 +39,7 @@ impl DocAssert {
         if errors.is_empty() {
             Ok(())
         } else {
-            Err(errors.join(",\n"))
+            Err(errors)
         }
     }
 }
