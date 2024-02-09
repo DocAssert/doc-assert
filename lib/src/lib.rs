@@ -3,12 +3,12 @@ mod executor;
 mod json_diff;
 mod parser;
 
-pub struct DocAssert {
-    url: Option<String>,
-    doc_path: Option<String>,
+pub struct DocAssert<'a> {
+    url: Option<&'a str>,
+    doc_path: Option<&'a str>,
 }
 
-impl DocAssert {
+impl<'a> DocAssert<'a> {
     pub fn new() -> Self {
         Self {
             url: None,
@@ -16,12 +16,12 @@ impl DocAssert {
         }
     }
 
-    pub fn with_url(mut self, url: String) -> Self {
+    pub fn with_url(mut self, url: &'a str) -> Self {
         self.url = Some(url);
         self
     }
 
-    pub fn with_doc_path(mut self, doc_path: String) -> Self {
+    pub fn with_doc_path(mut self, doc_path: &'a str) -> Self {
         self.doc_path = Some(doc_path);
         self
     }
@@ -44,7 +44,7 @@ impl DocAssert {
     }
 }
 
-impl Default for DocAssert {
+impl<'a> Default for DocAssert<'a> {
     fn default() -> Self {
         Self::new()
     }

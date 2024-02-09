@@ -8,7 +8,7 @@ const DOC_ASSERT_REQUEST: &str = "```docassertrequest";
 const DOC_ASSERT_RESPONSE: &str = "```docassertresponse";
 const IGNORE_PREFIX: &str = "[ignore]";
 
-pub(crate) fn parse(path: String) -> Result<Vec<TestCase>, String> {
+pub(crate) fn parse(path: &str) -> Result<Vec<TestCase>, String> {
     let (mut requests, mut responses) = (vec![], vec![]);
     let binding = fs::read_to_string(path).map_err(|e| e.to_string())?;
     let mut lines = binding.lines();
@@ -146,7 +146,7 @@ mod tests {
 
     #[test]
     fn test_parse() {
-        let result = parse("README.md".to_string());
+        let result = parse("README.md");
         assert!(result.is_ok());
         let test_cases = result.unwrap();
         assert_eq!(test_cases.len(), 1);
