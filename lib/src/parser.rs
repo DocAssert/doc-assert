@@ -16,21 +16,23 @@ pub(crate) fn parse(path: String) -> Result<Vec<TestCase>, String> {
     while let Some((mut line_no, line)) = lines.next() {
         line_no += 1;
         if line.starts_with(DOC_ASSERT_REQUEST) {
-            let request = get_request(line_no, get_code(&mut lines))
-                .map_err(|err| format!(
+            let request = get_request(line_no, get_code(&mut lines)).map_err(|err| {
+                format!(
                     "parsing error of a request code block starting at line {}: {}",
                     line_no,
                     err.to_string()
-                ))?;
+                )
+            })?;
             requests.push(request);
         }
         if line.starts_with(DOC_ASSERT_RESPONSE) {
-            let response = get_response(line_no, get_code(&mut lines))
-                .map_err(|err| format!(
+            let response = get_response(line_no, get_code(&mut lines)).map_err(|err| {
+                format!(
                     "parsing error of a response code block starting at line {}: {}",
                     line_no,
                     err.to_string()
-                ))?;
+                )
+            })?;
             responses.push(response);
         }
         if line.starts_with(IGNORE_PREFIX) {
