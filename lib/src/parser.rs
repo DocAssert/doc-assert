@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
+use std::iter::Enumerate;
 use std::str::{FromStr, Lines};
 
 use crate::domain::{HttpMethod, Request, Response, TestCase};
@@ -8,20 +9,33 @@ const DOC_ASSERT_REQUEST: &str = "```docassertrequest";
 const DOC_ASSERT_RESPONSE: &str = "```docassertresponse";
 const IGNORE_PREFIX: &str = "[ignore]";
 
-pub(crate) fn parse(path: &str) -> Result<Vec<TestCase>, String> {
+pub(crate) fn parse(path: String) -> Result<Vec<TestCase>, String> {
     let (mut requests, mut responses) = (vec![], vec![]);
     let binding = fs::read_to_string(path).map_err(|e| e.to_string())?;
-    let mut lines = binding.lines();
-    while let Some(line) = lines.next() {
+    let mut lines = binding.lines().enumerate();
+    while let Some((mut line_no, line)) = lines.next() {
+        line_no += 1;
         if line.starts_with(DOC_ASSERT_REQUEST) {
-            requests.push(get_request(get_code(&mut lines))?);
+            let request = get_request(line_no, get_code(&mut lines))
+                .map_err(|err| format!(
+                    "parsing error of a request code block starting at line {}: {}",
+                    line_no,
+                    err.to_string()
+                ))?;
+            requests.push(request);
         }
         if line.starts_with(DOC_ASSERT_RESPONSE) {
-            responses.push(get_response(get_code(&mut lines))?);
+            let response = get_response(line_no, get_code(&mut lines))
+                .map_err(|err| format!(
+                    "parsing error of a response code block starting at line {}: {}",
+                    line_no,
+                    err.to_string()
+                ))?;
+            responses.push(response);
         }
         if line.starts_with(IGNORE_PREFIX) {
             if responses.is_empty() || responses.len() != requests.len() {
-                return Err(format!("Misplaced ignore {}", line));
+                return Err(format!("misplaced ignore at line {}: {}", line_no, line));
             }
             let l = responses.len();
             responses[l - 1].ignore_paths.push(get_ignore_path(line)?);
@@ -29,7 +43,7 @@ pub(crate) fn parse(path: &str) -> Result<Vec<TestCase>, String> {
     }
     if requests.len() != responses.len() {
         return Err(format!(
-            "There is {} requests and {} responses but you need equal number of both",
+            "there is {} requests and {} responses but you need equal number of both",
             requests.len(),
             responses.len()
         ));
@@ -45,13 +59,13 @@ pub(crate) fn parse(path: &str) -> Result<Vec<TestCase>, String> {
     Ok(test_cases)
 }
 
-fn get_code(lines: &mut Lines) -> String {
+fn get_code(lines: &mut Enumerate<Lines>) -> String {
     let mut buff = String::new();
     while let Some(line) = lines.next() {
-        if line.starts_with("```") {
+        if line.1.starts_with("```") {
             break;
         }
-        buff.push_str(format!("{}\n", line).as_str());
+        buff.push_str(format!("{}\n", line.1).as_str());
     }
     buff
 }
@@ -65,16 +79,19 @@ fn get_ignore_path(s: &str) -> Result<String, String> {
     Ok(path)
 }
 
-fn get_request(code: String) -> Result<Request, String> {
+fn get_request(code_block_line_no: usize, code: String) -> Result<Request, String> {
     let mut lines = code.lines();
 
     // Parse HTTP method and URL
     let parts = lines
         .next()
-        .ok_or("Request line not found")
+        .ok_or("expected HTTP method and URI".to_string())
         .map(|line| line.split_whitespace().collect::<Vec<&str>>())?;
     if parts.len() != 2 {
-        return Err(format!("Invalid request line {}", parts.join(" ")));
+        return Err(format!(
+            "invalid HTTP method or URI: \"{}\"",
+            parts.join(" ")
+        ));
     }
 
     let (headers, body) = get_headers_and_body(lines)?;
@@ -84,23 +101,27 @@ fn get_request(code: String) -> Result<Request, String> {
         uri: parts[1].to_string(),
         headers,
         body,
+        line_number: code_block_line_no,
     })
 }
 
-fn get_response(code: String) -> Result<Response, String> {
+fn get_response(code_block_line_no: usize, code: String) -> Result<Response, String> {
     let mut lines = code.lines();
 
     // Parse HTTP method and URL
     let parts = lines
         .next()
-        .ok_or("Response code line not found")
+        .ok_or("response code line not found".to_string())
         .map(|line| line.split_whitespace().collect::<Vec<&str>>())?;
     if parts.len() != 2 {
-        return Err(format!("Invalid response code line {}", parts.join(" ")));
+        return Err(format!("invalid response code line {}", parts.join(" ")));
     }
     let http_code = parts[1]
         .parse::<u16>()
-        .map_err(|_| "Invalid HTTP code".to_string())?;
+        .map_err(|err| format!("invalid HTTP code: {}", err.to_string()))?;
+    if http_code < 100 || http_code > 599 {
+        return Err(format!("HTTP code {} outside of valid range", http_code));
+    }
 
     let (headers, body) = get_headers_and_body(lines)?;
 
@@ -109,6 +130,7 @@ fn get_response(code: String) -> Result<Response, String> {
         headers,
         ignore_paths: vec![],
         body,
+        line_number: code_block_line_no,
     })
 }
 
@@ -121,7 +143,7 @@ fn get_headers_and_body(
         if body.is_empty() && line.contains(':') && !line.contains('{') {
             let header_parts = line.split(':').map(|s| s.trim()).collect::<Vec<&str>>();
             if header_parts.len() != 2 {
-                return Err(format!("Invalid header line {}", line));
+                return Err(format!("invalid header line {}", line));
             }
             headers.insert(header_parts[0].to_string(), header_parts[1].to_string());
             continue;
@@ -146,7 +168,7 @@ mod tests {
 
     #[test]
     fn test_parse() {
-        let result = parse("README.md");
+        let result = parse("README.md".to_string());
         assert!(result.is_ok());
         let test_cases = result.unwrap();
         assert_eq!(test_cases.len(), 1);

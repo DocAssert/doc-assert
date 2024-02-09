@@ -2,14 +2,93 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
-use reqwest::{Body, Client, Method};
+use reqwest::{Body, Client, Method, Response};
 
-use crate::domain::{HttpMethod, TestCase};
+use crate::domain::{HttpMethod, Request, TestCase};
 use crate::json_diff::path::Path;
 use crate::json_diff::{diff, CompareMode, Config};
 
-pub(crate) async fn execute(base_url: &str, test_cases: TestCase) -> Result<(), String> {
-    let test_request = test_cases.request;
+pub(crate) async fn execute(base_url: &str, test_case: TestCase) -> Result<(), String> {
+    let test_request = test_case.request;
+    let test_request_line_number = test_request.line_number;
+    let response = get_response(base_url, test_request).await.map_err(|err| {
+        format!(
+            "error executing request defined at line {}: {}",
+            test_request_line_number, err
+        )
+    })?;
+    let test_response = test_case.response;
+    let test_response_line_number = test_response.line_number;
+    assert_response(response, test_response)
+        .await
+        .map_err(|err| {
+            format!(
+                "error asserting response defined at line {}: {}",
+                test_response_line_number, err
+            )
+        })
+}
+
+async fn assert_response(
+    response: Response,
+    test_response: crate::domain::Response,
+) -> Result<(), String> {
+    if test_response.code != response.status().as_u16() {
+        return Err(format!(
+            "expected response code {}, got {}",
+            test_response.code,
+            response.status().as_u16()
+        ));
+    }
+    for (key, val) in test_response.headers {
+        match response.headers().get(key.as_str()) {
+            Some(test_val) => {
+                if test_val != val.as_str() {
+                    return Err(format!(
+                        "expected header {} to be {}, got {}",
+                        key,
+                        val,
+                        test_val.to_str().unwrap()
+                    ));
+                }
+            }
+            None => return Err(format!("expected header {} not found", key)),
+        }
+    }
+    if let Some(test_body) = test_response.body {
+        let mut diff_config = Config::new(CompareMode::Strict);
+        for path in test_response.ignore_paths.iter() {
+            diff_config = diff_config.ignore_path(
+                Path::from_jsonpath(path.as_str())
+                    .map_err(|err| format!("invalid path {}", path,))?,
+            );
+        }
+        let response_body = response.text().await.map_err(|e| e.to_string())?;
+        let lhs =
+            &serde_json::from_str::<serde_json::Value>(response_body.as_str()).map_err(|err| {
+                format!(
+                    "error parsing JSON response from the server: {}",
+                    test_response.line_number,
+                )
+            })?;
+        let rhs = &serde_json::from_str::<serde_json::Value>(test_body.as_str())
+            .map_err(|err| format!("error parsing JSON: {}", err.to_string()))?;
+        let diff_result = diff(lhs, rhs, diff_config);
+        if !diff_result.is_empty() {
+            return Err(format!(
+                "expected response differs from actual {}",
+                diff_result
+                    .iter()
+                    .map(|d| d.to_string())
+                    .collect::<Vec<String>>()
+                    .join(", "),
+            ));
+        }
+    }
+    Ok(())
+}
+
+async fn get_response(base_url: &str, test_request: Request) -> Result<Response, String> {
     let mut request_builder = Client::new()
         .request(
             map_method(test_request.http_method),
@@ -20,53 +99,7 @@ pub(crate) async fn execute(base_url: &str, test_cases: TestCase) -> Result<(), 
         request_builder = request_builder.body(Body::from(body));
     }
     let response = request_builder.send().await.map_err(|e| e.to_string())?;
-    let test_response = test_cases.response;
-    if test_response.code != response.status().as_u16() {
-        return Err(format!(
-            "Expected response code {}, got {}",
-            test_response.code,
-            response.status().as_u16()
-        ));
-    }
-    for (key, val) in test_response.headers {
-        match response.headers().get(key.as_str()) {
-            Some(test_val) => {
-                if test_val != val.as_str() {
-                    return Err(format!(
-                        "Expected header {} to be {}, got {}",
-                        key,
-                        val,
-                        test_val.to_str().unwrap()
-                    ));
-                }
-            }
-            None => return Err(format!("Expected header {} not found", key)),
-        }
-    }
-    if let Some(test_body) = test_response.body {
-        let mut diff_config = Config::new(CompareMode::Strict);
-        for path in test_response.ignore_paths.iter() {
-            diff_config = diff_config
-                .ignore_path(Path::from_jsonpath(path.as_str()).map_err(|e| e.to_string())?);
-        }
-        let response_body = response.text().await.map_err(|e| e.to_string())?;
-        let lhs = &serde_json::from_str::<serde_json::Value>(response_body.as_str())
-            .map_err(|e| e.to_string())?;
-        let rhs = &serde_json::from_str::<serde_json::Value>(test_body.as_str())
-            .map_err(|e| e.to_string())?;
-        let diff_result = diff(lhs, rhs, diff_config);
-        if !diff_result.is_empty() {
-            return Err(format!(
-                "Expected response differs from actual {}",
-                diff_result
-                    .iter()
-                    .map(|d| d.to_string())
-                    .collect::<Vec<String>>()
-                    .join(", ")
-            ));
-        }
-    }
-    Ok(())
+    Ok(response)
 }
 
 fn map_headers(headers: &HashMap<String, String>) -> Result<HeaderMap, String> {
@@ -121,6 +154,7 @@ mod tests {
                     .collect(),
                 uri: users_endpoint.to_string(),
                 body: Some(request_body.to_string()),
+                line_number: 1,
             },
             response: Response {
                 code: response_status as u16,
@@ -129,6 +163,7 @@ mod tests {
                     .collect(),
                 ignore_paths: vec!["$.id".to_string()],
                 body: Some(response_body.to_string()),
+                line_number: 2,
             },
         };
         let result = execute(server.url().as_str(), test_case).await;

@@ -37,6 +37,7 @@ pub(crate) struct Request {
     pub headers: HashMap<String, String>,
     pub uri: String,
     pub body: Option<String>,
+    pub line_number: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -45,4 +46,5 @@ pub(crate) struct Response {
     pub headers: HashMap<String, String>,
     pub ignore_paths: Vec<String>,
     pub body: Option<String>,
+    pub line_number: usize,
 }
