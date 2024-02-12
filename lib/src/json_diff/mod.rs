@@ -76,32 +76,36 @@ impl<'a> Config<'a> {
     }
 }
 
-pub(crate) fn diff<'a>(lhs: &'a Value, rhs: &'a Value, config: Config<'a>) -> Vec<Difference<'a>> {
+pub(crate) fn diff<'a>(
+    actual: &'a Value,
+    expected: &'a Value,
+    config: Config<'a>,
+) -> Vec<Difference<'a>> {
     let mut acc = vec![];
-    diff_with(lhs, rhs, config, Path::Root, &mut acc);
+    diff_with(actual, expected, config, Path::Root, &mut acc);
     acc
 }
 
 fn diff_with<'a>(
-    lhs: &'a Value,
-    rhs: &'a Value,
+    actual: &'a Value,
+    expected: &'a Value,
     config: Config<'a>,
     path: Path<'a>,
     acc: &mut Vec<Difference<'a>>,
 ) {
     let mut folder = DiffFolder {
-        rhs,
+        expected,
         path,
         acc,
         config,
     };
 
-    fold_json(lhs, &mut folder);
+    fold_json(actual, &mut folder);
 }
 
 #[derive(Debug)]
 struct DiffFolder<'a, 'b> {
-    rhs: &'a Value,
+    expected: &'a Value,
     path: Path<'a>,
     acc: &'b mut Vec<Difference<'a>>,
     config: Config<'a>,
@@ -109,15 +113,15 @@ struct DiffFolder<'a, 'b> {
 
 macro_rules! direct_compare {
     ($name:ident) => {
-        fn $name(&mut self, lhs: &'a Value) {
-            if self.rhs != lhs {
+        fn $name(&mut self, actual: &'a Value) {
+            if self.expected != actual {
                 if self.config.to_ignore(&self.path) {
                     return;
                 }
 
                 self.acc.push(Difference {
-                    lhs: Some(lhs),
-                    rhs: Some(&self.rhs),
+                    actual: Some(actual),
+                    expected: Some(&self.expected),
                     path: self.path.clone(),
                     config: self.config.clone(),
                 });
@@ -131,10 +135,10 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
     direct_compare!(on_bool);
     direct_compare!(on_string);
 
-    fn on_number(&mut self, lhs: &'a Value) {
+    fn on_number(&mut self, actual: &'a Value) {
         let is_equal = match self.config.numeric_mode {
-            NumericMode::Strict => self.rhs == lhs,
-            NumericMode::AssumeFloat => self.rhs.as_f64() == lhs.as_f64(),
+            NumericMode::Strict => self.expected == actual,
+            NumericMode::AssumeFloat => self.expected.as_f64() == actual.as_f64(),
         };
 
         if self.config.to_ignore(&self.path) {
@@ -143,33 +147,33 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
 
         if !is_equal {
             self.acc.push(Difference {
-                lhs: Some(lhs),
-                rhs: Some(self.rhs),
+                actual: Some(actual),
+                expected: Some(self.expected),
                 path: self.path.clone(),
                 config: self.config.clone(),
             });
         }
     }
 
-    fn on_array(&mut self, lhs: &'a Value) {
-        if let Some(rhs) = self.rhs.as_array() {
-            let lhs = lhs.as_array().unwrap();
+    fn on_array(&mut self, actual: &'a Value) {
+        if let Some(expected) = self.expected.as_array() {
+            let actual = actual.as_array().unwrap();
 
             match self.config.compare_mode {
                 CompareMode::Inclusive => {
-                    for (idx, rhs) in rhs.iter().enumerate() {
+                    for (idx, expected) in expected.iter().enumerate() {
                         let path = self.path.append(Key::Idx(idx));
 
-                        if let Some(lhs) = lhs.get(idx) {
-                            diff_with(lhs, rhs, self.config.clone(), path, self.acc)
+                        if let Some(actual) = actual.get(idx) {
+                            diff_with(actual, expected, self.config.clone(), path, self.acc)
                         } else {
                             if self.config.to_ignore(&path) {
                                 continue;
                             }
 
                             self.acc.push(Difference {
-                                lhs: None,
-                                rhs: Some(self.rhs),
+                                actual: None,
+                                expected: Some(self.expected),
                                 path,
                                 config: self.config.clone(),
                             });
@@ -177,38 +181,38 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
                     }
                 }
                 CompareMode::Strict => {
-                    let all_keys = rhs
+                    let all_keys = expected
                         .indexes()
                         .into_iter()
-                        .chain(lhs.indexes())
+                        .chain(actual.indexes())
                         .collect::<HashSet<_>>();
                     for key in all_keys {
                         let path = self.path.append(Key::Idx(key));
 
-                        match (lhs.get(key), rhs.get(key)) {
-                            (Some(lhs), Some(rhs)) => {
-                                diff_with(lhs, rhs, self.config.clone(), path, self.acc);
+                        match (actual.get(key), expected.get(key)) {
+                            (Some(actual), Some(expected)) => {
+                                diff_with(actual, expected, self.config.clone(), path, self.acc);
                             }
-                            (None, Some(rhs)) => {
+                            (None, Some(expected)) => {
                                 if self.config.to_ignore(&path) {
                                     continue;
                                 }
 
                                 self.acc.push(Difference {
-                                    lhs: None,
-                                    rhs: Some(rhs),
+                                    actual: None,
+                                    expected: Some(expected),
                                     path,
                                     config: self.config.clone(),
                                 });
                             }
-                            (Some(lhs), None) => {
+                            (Some(actual), None) => {
                                 if self.config.to_ignore(&path) {
                                     continue;
                                 }
 
                                 self.acc.push(Difference {
-                                    lhs: Some(lhs),
-                                    rhs: None,
+                                    actual: Some(actual),
+                                    expected: None,
                                     path,
                                     config: self.config.clone(),
                                 });
@@ -226,33 +230,33 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
             }
 
             self.acc.push(Difference {
-                lhs: Some(lhs),
-                rhs: Some(self.rhs),
+                actual: Some(actual),
+                expected: Some(self.expected),
                 path: self.path.clone(),
                 config: self.config.clone(),
             });
         }
     }
 
-    fn on_object(&mut self, lhs: &'a Value) {
-        if let Some(rhs) = self.rhs.as_object() {
-            let lhs = lhs.as_object().unwrap();
+    fn on_object(&mut self, actual: &'a Value) {
+        if let Some(expected) = self.expected.as_object() {
+            let actual = actual.as_object().unwrap();
 
             match self.config.compare_mode {
                 CompareMode::Inclusive => {
-                    for (key, rhs) in rhs.iter() {
+                    for (key, expected) in expected.iter() {
                         let path = self.path.append(Key::Field(key));
 
-                        if let Some(lhs) = lhs.get(key) {
-                            diff_with(lhs, rhs, self.config.clone(), path, self.acc)
+                        if let Some(actual) = actual.get(key) {
+                            diff_with(actual, expected, self.config.clone(), path, self.acc)
                         } else {
                             if self.config.to_ignore(&path) {
                                 continue;
                             }
 
                             self.acc.push(Difference {
-                                lhs: None,
-                                rhs: Some(self.rhs),
+                                actual: None,
+                                expected: Some(self.expected),
                                 path,
                                 config: self.config.clone(),
                             });
@@ -260,34 +264,34 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
                     }
                 }
                 CompareMode::Strict => {
-                    let all_keys = rhs.keys().chain(lhs.keys()).collect::<HashSet<_>>();
+                    let all_keys = expected.keys().chain(actual.keys()).collect::<HashSet<_>>();
                     for key in all_keys {
                         let path = self.path.append(Key::Field(key));
 
-                        match (lhs.get(key), rhs.get(key)) {
-                            (Some(lhs), Some(rhs)) => {
-                                diff_with(lhs, rhs, self.config.clone(), path, self.acc);
+                        match (actual.get(key), expected.get(key)) {
+                            (Some(actual), Some(expected)) => {
+                                diff_with(actual, expected, self.config.clone(), path, self.acc);
                             }
-                            (None, Some(rhs)) => {
+                            (None, Some(expected)) => {
                                 if self.config.to_ignore(&path) {
                                     continue;
                                 }
 
                                 self.acc.push(Difference {
-                                    lhs: None,
-                                    rhs: Some(rhs),
+                                    actual: None,
+                                    expected: Some(expected),
                                     path,
                                     config: self.config.clone(),
                                 });
                             }
-                            (Some(lhs), None) => {
+                            (Some(actual), None) => {
                                 if self.config.to_ignore(&path) {
                                     continue;
                                 }
 
                                 self.acc.push(Difference {
-                                    lhs: Some(lhs),
-                                    rhs: None,
+                                    actual: Some(actual),
+                                    expected: None,
                                     path,
                                     config: self.config.clone(),
                                 });
@@ -305,8 +309,8 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
             }
 
             self.acc.push(Difference {
-                lhs: Some(lhs),
-                rhs: Some(self.rhs),
+                actual: Some(actual),
+                expected: Some(self.expected),
                 path: self.path.clone(),
                 config: self.config.clone(),
             });
@@ -317,8 +321,8 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
 #[derive(Debug, PartialEq)]
 pub(crate) struct Difference<'a> {
     path: Path<'a>,
-    lhs: Option<&'a Value>,
-    rhs: Option<&'a Value>,
+    actual: Option<&'a Value>,
+    expected: Option<&'a Value>,
     config: Config<'a>,
 }
 
@@ -326,7 +330,7 @@ impl<'a> fmt::Display for Difference<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let json_to_string = |json: &Value| serde_json::to_string_pretty(json).unwrap();
 
-        match (&self.config.compare_mode, &self.lhs, &self.rhs) {
+        match (&self.config.compare_mode, &self.actual, &self.expected) {
             (CompareMode::Inclusive, Some(actual), Some(expected)) => {
                 writeln!(f, "json atoms at path \"{}\" are not equal:", self.path)?;
                 writeln!(f, "    expected:")?;
@@ -346,18 +350,26 @@ impl<'a> fmt::Display for Difference<'a> {
             }
             (CompareMode::Inclusive, None, None) => unreachable!("can't both be missing"),
 
-            (CompareMode::Strict, Some(lhs), Some(rhs)) => {
+            (CompareMode::Strict, Some(actual), Some(expected)) => {
                 writeln!(f, "json atoms at path \"{}\" are not equal:", self.path)?;
-                writeln!(f, "    lhs:")?;
-                writeln!(f, "{}", json_to_string(lhs).indent(8))?;
-                writeln!(f, "    rhs:")?;
-                write!(f, "{}", json_to_string(rhs).indent(8))?;
+                writeln!(f, "    expected:")?;
+                writeln!(f, "{}", json_to_string(actual).indent(8))?;
+                writeln!(f, "    actual:")?;
+                write!(f, "{}", json_to_string(expected).indent(8))?;
             }
             (CompareMode::Strict, None, Some(_)) => {
-                write!(f, "json atom at path \"{}\" is missing from lhs", self.path)?;
+                write!(
+                    f,
+                    "json atom at path \"{}\" is missing from actual",
+                    self.path
+                )?;
             }
             (CompareMode::Strict, Some(_), None) => {
-                write!(f, "json atom at path \"{}\" is missing from rhs", self.path)?;
+                write!(
+                    f,
+                    "json atom at path \"{}\" is missing from expected",
+                    self.path
+                )?;
             }
             (CompareMode::Strict, None, None) => unreachable!("can't both be missing"),
         }
@@ -587,14 +599,14 @@ mod test {
 
     #[test]
     fn test_object_strict() {
-        let lhs = json!({});
-        let rhs = json!({ "a": 1 });
-        let diffs = diff(&lhs, &rhs, Config::new(CompareMode::Strict));
+        let actual = json!({});
+        let expected = json!({ "a": 1 });
+        let diffs = diff(&actual, &expected, Config::new(CompareMode::Strict));
         assert_eq!(diffs.len(), 1);
 
-        let lhs = json!({ "a": 1 });
-        let rhs = json!({});
-        let diffs = diff(&lhs, &rhs, Config::new(CompareMode::Strict));
+        let actual = json!({ "a": 1 });
+        let expected = json!({});
+        let diffs = diff(&actual, &expected, Config::new(CompareMode::Strict));
         assert_eq!(diffs.len(), 1);
 
         let json = json!({ "a": 1 });
@@ -604,87 +616,92 @@ mod test {
 
     #[test]
     fn test_object_deep_path() {
-        let lhs = json!({ "id": 1, "name": "John" });
-        let rhs = json!({ "id": 2, "name": "John" });
+        let actual = json!({ "id": 1, "name": "John" });
+        let expected = json!({ "id": 2, "name": "John" });
         let ignore_path = Path::from_jsonpath("$.id").unwrap();
         let diffs = diff(
-            &lhs,
-            &rhs,
+            &actual,
+            &expected,
             Config::new(CompareMode::Strict).ignore_path(ignore_path),
         );
         assert_eq!(diffs.len(), 0);
 
-        let lhs = json!({ "a": { "b": [{"c": 0}, { "c": 1 }] } });
-        let rhs = json!({ "a": { "b": [{"c": 0}, { "c": 2 }] } });
+        let actual = json!({ "a": { "b": [{"c": 0}, { "c": 1 }] } });
+        let expected = json!({ "a": { "b": [{"c": 0}, { "c": 2 }] } });
         let ignore_path = Path::from_jsonpath("$.a.b[*].c").unwrap();
 
         let config = Config::new(CompareMode::Strict).ignore_path(ignore_path);
 
-        let diffs = diff(&lhs, &rhs, config);
+        let diffs = diff(&actual, &expected, config);
         assert_eq!(diffs.len(), 0);
 
         // New test cases
         // Test deeper nesting with ignored path
-        let lhs = json!({ "a": { "b": { "d": { "e": 3 } } } });
-        let rhs = json!({ "a": { "b": { "d": { "e": 4 } } } });
+        let actual = json!({ "a": { "b": { "d": { "e": 3 } } } });
+        let expected = json!({ "a": { "b": { "d": { "e": 4 } } } });
         let ignore_path = Path::from_jsonpath("$.a.b.d.e").unwrap();
 
         let config = Config::new(CompareMode::Strict).ignore_path(ignore_path);
-        let diffs = diff(&lhs, &rhs, config);
+        let diffs = diff(&actual, &expected, config);
         assert_eq!(diffs.len(), 0);
 
         // Test array within deep object structure
-        let lhs = json!({ "a": { "b": [{ "d": [1, 2, 3] }] } });
-        let rhs = json!({ "a": { "b": [{ "d": [1, 2, 4] }] } });
+        let actual = json!({ "a": { "b": [{ "d": [1, 2, 3] }] } });
+        let expected = json!({ "a": { "b": [{ "d": [1, 2, 4] }] } });
         let ignore_path = Path::from_jsonpath("$.a.b[*].d[*]").unwrap();
 
         let config = Config::new(CompareMode::Strict).ignore_path(ignore_path);
-        let diffs = diff(&lhs, &rhs, config);
+        let diffs = diff(&actual, &expected, config);
         assert_eq!(diffs.len(), 0);
 
         // Test with multiple ignore paths
-        let lhs = json!({ "a": { "x": 1, "y": 2, "z": 3 } });
-        let rhs = json!({ "a": { "x": 1, "y": 3, "z": 3 } });
+        let actual = json!({ "a": { "x": 1, "y": 2, "z": 3 } });
+        let expected = json!({ "a": { "x": 1, "y": 3, "z": 3 } });
         let ignore_path1 = Path::from_jsonpath("$.a.x").unwrap();
         let ignore_path2 = Path::from_jsonpath("$.a.y").unwrap();
 
         let config = Config::new(CompareMode::Strict)
             .ignore_path(ignore_path1)
             .ignore_path(ignore_path2);
-        let diffs = diff(&lhs, &rhs, config);
+        let diffs = diff(&actual, &expected, config);
         assert_eq!(diffs.len(), 0);
 
         // Test ignored path with non-matching element
-        let lhs = json!({ "a": { "b": 1, "c": 2 } });
-        let rhs = json!({ "a": { "b": 1, "c": 3 } });
+        let actual = json!({ "a": { "b": 1, "c": 2 } });
+        let expected = json!({ "a": { "b": 1, "c": 3 } });
         let ignore_path = Path::from_jsonpath("$.a.d").unwrap();
 
         let config = Config::new(CompareMode::Strict).ignore_path(ignore_path);
-        let diffs = diff(&lhs, &rhs, config);
+        let diffs = diff(&actual, &expected, config);
         assert_ne!(diffs.len(), 0);
     }
 
     #[test]
     fn test_complex_jsons() {
-        let lhs_path = "tests/data/lhs.json";
-        let rhs_path = "tests/data/rhs.json";
+        let actual_path = "tests/data/actual.json";
+        let expected_path = "tests/data/expected.json";
 
-        let lhs_json = load_json_from_file(lhs_path).expect("Error parsing lhs.json");
-        let rhs_json = load_json_from_file(rhs_path).expect("Error parsing rhs.json");
+        let actual_json = load_json_from_file(actual_path).expect("Error parsing actual.json");
+        let expected_json =
+            load_json_from_file(expected_path).expect("Error parsing expected.json");
 
-        let diffs = diff(&lhs_json, &rhs_json, Config::new(CompareMode::Inclusive));
+        let diffs = diff(
+            &actual_json,
+            &expected_json,
+            Config::new(CompareMode::Inclusive),
+        );
         assert_eq!(diffs.len(), 20);
 
         let diffs = diff(
-            &lhs_json,
-            &rhs_json,
+            &actual_json,
+            &expected_json,
             Config::new(CompareMode::Strict).ignore_path("$.user.name".jsonpath().unwrap()),
         );
         assert_eq!(diffs.len(), 19);
 
         let diffs = diff(
-            &lhs_json,
-            &rhs_json,
+            &actual_json,
+            &expected_json,
             Config::new(CompareMode::Strict)
                 .ignore_path("$.user.name".jsonpath().unwrap())
                 .ignore_path("$.user.profile.age".jsonpath().unwrap()),
@@ -692,8 +709,8 @@ mod test {
         assert_eq!(diffs.len(), 18);
 
         let diffs = diff(
-            &lhs_json,
-            &rhs_json,
+            &actual_json,
+            &expected_json,
             Config::new(CompareMode::Strict)
                 .ignore_path("$.user.name".jsonpath().unwrap())
                 .ignore_path("$.user.profile.age".jsonpath().unwrap())
@@ -702,8 +719,8 @@ mod test {
         assert_eq!(diffs.len(), 17);
 
         let diffs = diff(
-            &lhs_json,
-            &rhs_json,
+            &actual_json,
+            &expected_json,
             Config::new(CompareMode::Strict)
                 .ignore_path("$.user.name".jsonpath().unwrap())
                 .ignore_path("$.user.profile.age".jsonpath().unwrap())

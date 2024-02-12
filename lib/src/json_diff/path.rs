@@ -61,25 +61,28 @@ impl<'a> Path<'a> {
             (Path::Root, Path::Root) => true,
             (Path::Root, Path::Keys(_)) => true,
             (Path::Keys(_), Path::Root) => false,
-            (Path::Keys(lhs), Path::Keys(rhs)) => {
-                if lhs.len() > rhs.len() {
+            (Path::Keys(actual), Path::Keys(expected)) => {
+                if actual.len() > expected.len() {
                     return false;
                 }
 
-                lhs.iter().zip(rhs.iter()).all(|(lhs, rhs)| {
-                    if lhs == rhs {
-                        return true;
-                    }
+                actual
+                    .iter()
+                    .zip(expected.iter())
+                    .all(|(actual, expected)| {
+                        if actual == expected {
+                            return true;
+                        }
 
-                    match (lhs, rhs) {
-                        (Key::Wildcard, Key::Field(_)) => return true,
-                        (Key::WildcardArray, Key::Idx(_)) => return true,
-                        (Key::IdxRange(a, b), Key::Idx(c)) => return a <= c && c < b,
-                        (Key::IdxRangeStart(a), Key::Idx(b)) => return a <= b,
-                        (Key::IdxRangeEnd(a), Key::Idx(b)) => return b < a,
-                        _ => return false,
-                    }
-                })
+                        match (actual, expected) {
+                            (Key::Wildcard, Key::Field(_)) => return true,
+                            (Key::WildcardArray, Key::Idx(_)) => return true,
+                            (Key::IdxRange(a, b), Key::Idx(c)) => return a <= c && c < b,
+                            (Key::IdxRangeStart(a), Key::Idx(b)) => return a <= b,
+                            (Key::IdxRangeEnd(a), Key::Idx(b)) => return b < a,
+                            _ => return false,
+                        }
+                    })
             }
         }
     }
