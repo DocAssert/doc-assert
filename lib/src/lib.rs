@@ -32,7 +32,7 @@ impl<'a> DocAssert<'a> {
         let test_cases = parser::parse(doc_path.to_string()).map_err(|e| vec![e])?;
         let mut errors = vec![];
         for tc in test_cases {
-            if let Err(e) = executor::execute(url.clone(), tc).await {
+            if let Err(e) = executor::execute(url, tc).await {
                 errors.push(e);
             }
         }

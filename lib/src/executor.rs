@@ -11,9 +11,9 @@ use crate::json_diff::{diff, CompareMode, Config};
 pub(crate) async fn execute(base_url: &str, test_case: TestCase) -> Result<(), String> {
     let test_request = test_case.request;
     let test_request_line_number = test_request.line_number;
-    let http_method = &test_request.http_method.clone();
-    let uri = &test_request.uri.clone();
-    let response = get_response(base_url, test_request).await.map_err(|err| {
+    let http_method = &test_request.http_method;
+    let uri = &test_request.uri;
+    let response = get_response(base_url, &test_request).await.map_err(|err| {
         format!(
             "error executing request {} {} defined at line {}: {}",
             http_method, uri, test_request_line_number, err
@@ -90,15 +90,15 @@ async fn assert_response(
     Ok(())
 }
 
-async fn get_response(base_url: &str, test_request: Request) -> Result<Response, String> {
+async fn get_response(base_url: &str, test_request: &Request) -> Result<Response, String> {
     let mut request_builder = Client::new()
         .request(
-            map_method(test_request.http_method),
+            map_method(&test_request.http_method),
             format!("{}{}", base_url, test_request.uri),
         )
         .headers(map_headers(&test_request.headers)?);
-    if let Some(body) = test_request.body {
-        request_builder = request_builder.body(Body::from(body));
+    if let Some(body) = &test_request.body {
+        request_builder = request_builder.body(Body::from(body.clone()));
     }
     let response = request_builder.send().await.map_err(|e| e.to_string())?;
     Ok(response)
@@ -114,7 +114,7 @@ fn map_headers(headers: &HashMap<String, String>) -> Result<HeaderMap, String> {
     Ok(header_map)
 }
 
-fn map_method(http_method: HttpMethod) -> Method {
+fn map_method(http_method: &HttpMethod) -> Method {
     match http_method {
         HttpMethod::Get => Method::GET,
         HttpMethod::Post => Method::POST,
@@ -135,7 +135,6 @@ mod tests {
         let header_value = "application/json";
         let request_body = "{\"name\":\"test\"}";
         let response_body = "{\"id\": 1, \"name\": \"John\"}";
-        let response_body1 = "{\"id\": 1, \"name\": \"John1\"}";
         let response_status = 201;
         let mut server = mockito::Server::new();
         server
@@ -146,7 +145,7 @@ mod tests {
             ))
             .with_header(header_name, header_value)
             .with_status(response_status)
-            .with_body(response_body1)
+            .with_body(response_body)
             .create();
 
         let test_case = TestCase {
