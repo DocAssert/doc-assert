@@ -93,7 +93,7 @@ impl<'a> Path<'a> {
         )?;
 
         if !re.is_match(jsonpath) {
-            return Err("Invalid JSONPath".into());
+            return Err("invalid JSONPath".into());
         }
 
         if jsonpath == "$" {

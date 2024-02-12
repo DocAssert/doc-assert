@@ -19,7 +19,7 @@ Content-Type: application/json
     "name": "test"
 }
 ```
-[ignore]: # (id)
+[ignore]: # ($.id)
 
 
 ## Unrelated
