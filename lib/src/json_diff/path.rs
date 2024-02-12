@@ -1,6 +1,5 @@
-use lazy_static::lazy_static;
 use regex::Regex;
-use std::fmt;
+use std::{fmt, sync::Once};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Path<'a> {
@@ -45,8 +44,17 @@ impl<'a> fmt::Display for Key<'a> {
     }
 }
 
-lazy_static! {
-    static ref RE: Regex = Regex::new(r"^\$\.?(([a-zA-Z_][a-zA-Z0-9_]*)*(\[\d+\]|\[\d*:\d*\]|(\[\*\]))?)(\.((([a-zA-Z_][a-zA-Z0-9_]*)(\[\d+\]|\[\d*:\d*\]|(\[\*\]))?)|\*))*$").unwrap();
+static INIT: Once = Once::new();
+static mut REGEX: *const Regex = std::ptr::null();
+
+fn get_regex() -> &'static Regex {
+    unsafe {
+        INIT.call_once(|| {
+            let regex = Regex::new(r"^\$\.?(([a-zA-Z_][a-zA-Z0-9_]*)*(\[\d+\]|\[\d*:\d*\]|(\[\*\]))?)(\.((([a-zA-Z_][a-zA-Z0-9_]*)(\[\d+\]|\[\d*:\d*\]|(\[\*\]))?)|\*))*$").unwrap();
+            REGEX = Box::into_raw(Box::new(regex));
+        });
+        &*REGEX
+    }
 }
 
 impl<'a> Path<'a> {
@@ -90,7 +98,9 @@ impl<'a> Path<'a> {
     }
 
     pub(crate) fn from_jsonpath(jsonpath: &'a str) -> Result<Self, Box<dyn std::error::Error>> {
-        if !RE.is_match(jsonpath) {
+        let re = get_regex();
+
+        if !re.is_match(jsonpath) {
             return Err("Invalid JSONPath".into());
         }
 
