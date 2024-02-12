@@ -1,3 +1,5 @@
+use lazy_static::lazy_static;
+use regex::Regex;
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -10,6 +12,8 @@ pub enum Path<'a> {
 pub enum Key<'a> {
     Idx(usize),
     IdxRange(usize, usize),
+    IdxRangeStart(usize),
+    IdxRangeEnd(usize),
     Wildcard,
     WildcardArray,
     Field(&'a str),
@@ -33,10 +37,16 @@ impl<'a> fmt::Display for Key<'a> {
             Key::Idx(idx) => write!(f, "[{}]", idx),
             Key::Field(key) => write!(f, ".{}", key),
             Key::IdxRange(start, end) => write!(f, "[{}:{}]", start, end),
+            Key::IdxRangeStart(start) => write!(f, "[{}:]", start),
+            Key::IdxRangeEnd(end) => write!(f, "[:{}]", end),
             Key::Wildcard => write!(f, "*"),
             Key::WildcardArray => write!(f, "[*]"),
         }
     }
+}
+
+lazy_static! {
+    static ref RE: Regex = Regex::new(r"^\$\.?(([a-zA-Z_][a-zA-Z0-9_]*)*(\[\d+\]|\[\d*:\d*\]|(\[\*\]))?)(\.((([a-zA-Z_][a-zA-Z0-9_]*)(\[\d+\]|\[\d*:\d*\]|(\[\*\]))?)|\*))*$").unwrap();
 }
 
 impl<'a> Path<'a> {
@@ -65,22 +75,25 @@ impl<'a> Path<'a> {
                     if lhs == rhs {
                         return true;
                     }
-                    if let (Key::Wildcard, Key::Field(_)) = (lhs, rhs) {
-                        return true;
+
+                    match (lhs, rhs) {
+                        (Key::Wildcard, Key::Field(_)) => return true,
+                        (Key::WildcardArray, Key::Idx(_)) => return true,
+                        (Key::IdxRange(a, b), Key::Idx(c)) => return a <= c && c < b,
+                        (Key::IdxRangeStart(a), Key::Idx(b)) => return a <= b,
+                        (Key::IdxRangeEnd(a), Key::Idx(b)) => return b < a,
+                        _ => return false,
                     }
-                    if let (Key::WildcardArray, Key::Idx(_)) = (lhs, rhs) {
-                        return true;
-                    }
-                    if let (Key::IdxRange(a, b), Key::Idx(c)) = (lhs, rhs) {
-                        return a <= c && c <= b;
-                    }
-                    false
                 })
             }
         }
     }
 
     pub(crate) fn from_jsonpath(jsonpath: &'a str) -> Result<Self, Box<dyn std::error::Error>> {
+        if !RE.is_match(jsonpath) {
+            return Err("Invalid JSONPath".into());
+        }
+
         if jsonpath == "$" {
             return Ok(Path::Root);
         }
@@ -107,11 +120,21 @@ impl<'a> Path<'a> {
             token = &token[..token.len() - 1];
         }
 
-        if token == "*" {
+        if token == "*" || token == ":" {
             match from_array {
                 true => return Ok(Key::WildcardArray),
                 false => return Ok(Key::Wildcard),
             }
+        }
+
+        if token.ends_with(":") {
+            let start: usize = token.trim_end_matches(':').parse()?;
+            return Ok(Key::IdxRangeStart(start));
+        }
+
+        if token.starts_with(":") {
+            let end: usize = token.trim_start_matches(':').parse()?;
+            return Ok(Key::IdxRangeEnd(end));
         }
 
         if token.contains(':') {
@@ -202,6 +225,21 @@ mod test {
                 Key::IdxRange(0, 1),
             ])
         );
+
+        let path: Path = "$[:].a[3:].b[4:].*.c[0:1]".jsonpath().unwrap();
+        assert_eq!(
+            path,
+            Path::Keys(vec![
+                Key::WildcardArray,
+                Key::Field("a"),
+                Key::IdxRangeStart(3),
+                Key::Field("b"),
+                Key::IdxRangeStart(4),
+                Key::Wildcard,
+                Key::Field("c"),
+                Key::IdxRange(0, 1),
+            ])
+        );
     }
 
     #[test]
@@ -224,7 +262,7 @@ mod test {
 
         let path1 = "$.a.*.c[0:3]".jsonpath().unwrap();
         let path2 = "$.a.b.c[3]".jsonpath().unwrap();
-        assert!(path1.prefixes(&path2));
+        assert!(!path1.prefixes(&path2));
 
         let path1 = "$.a.*.c[0]".jsonpath().unwrap();
         let path2 = "$.a[1].c[0]".jsonpath().unwrap();
@@ -233,5 +271,50 @@ mod test {
         let path1 = "$.a.*.c[0].*".jsonpath().unwrap();
         let path2 = "$.a.d.c[0]".jsonpath().unwrap();
         assert!(!path1.prefixes(&path2));
+
+        let path1 = "$.a.*.c[:3]".jsonpath().unwrap();
+        let path2 = "$.a.d.c[2]".jsonpath().unwrap();
+        assert!(path1.prefixes(&path2));
+
+        let path1 = "$.a.*.c[:3]".jsonpath().unwrap();
+        let path2 = "$.a.d.c[4]".jsonpath().unwrap();
+        assert!(!path1.prefixes(&path2));
+
+        let path1 = "$.a.*.c[3:]".jsonpath().unwrap();
+        let path2 = "$.a.d.c[4]".jsonpath().unwrap();
+        assert!(path1.prefixes(&path2));
+    }
+
+    #[test]
+    fn test_prefixes_validation() {
+        let path1 = "$.a.b.c".jsonpath();
+        assert!(path1.is_ok());
+
+        let path2 = ".a.b.c".jsonpath();
+        assert!(path2.is_err());
+
+        let path3 = "$.a.b.c[".jsonpath();
+        assert!(path3.is_err());
+
+        let path4 = "$.a.b.c[]".jsonpath();
+        assert!(path4.is_err());
+
+        let path5 = "$.a.b.c[1:".jsonpath();
+        assert!(path5.is_err());
+
+        let path6 = "$.a.b.c[1:2".jsonpath();
+        assert!(path6.is_err());
+
+        let path7 = "$.a.b.c[1:2]".jsonpath();
+        assert!(path7.is_ok());
+
+        let path8 = "$[*].a".jsonpath();
+        assert!(path8.is_ok());
+
+        let path9 = "id".jsonpath();
+        assert!(path9.is_err());
+
+        let path10 = "".jsonpath();
+        assert!(path10.is_err());
     }
 }
