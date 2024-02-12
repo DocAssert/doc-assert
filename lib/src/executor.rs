@@ -16,10 +16,7 @@ pub(crate) async fn execute(base_url: &str, test_case: TestCase) -> Result<(), S
     let response = get_response(base_url, test_request).await.map_err(|err| {
         format!(
             "error executing request {} {} defined at line {}: {}",
-            http_method,
-            uri,
-            test_request_line_number,
-            err
+            http_method, uri, test_request_line_number, err
         )
     })?;
     let test_response = test_case.response;
@@ -29,10 +26,7 @@ pub(crate) async fn execute(base_url: &str, test_case: TestCase) -> Result<(), S
         .map_err(|err| {
             format!(
                 "error asserting response from {} {} defined at line {}: {}",
-                http_method,
-                uri,
-                test_response_line_number,
-                err
+                http_method, uri, test_response_line_number, err
             )
         })
 }
