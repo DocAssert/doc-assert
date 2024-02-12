@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::str::FromStr;
 
 #[derive(Debug, Clone)]
@@ -14,6 +15,17 @@ pub(crate) enum HttpMethod {
     Post,
     Put,
     Delete,
+}
+
+impl Display for HttpMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            HttpMethod::Get => write!(f, "GET"),
+            HttpMethod::Post => write!(f, "POST"),
+            HttpMethod::Put => write!(f, "PUT"),
+            HttpMethod::Delete => write!(f, "DELETE"),
+        }
+    }
 }
 
 impl FromStr for HttpMethod {
@@ -37,6 +49,7 @@ pub(crate) struct Request {
     pub headers: HashMap<String, String>,
     pub uri: String,
     pub body: Option<String>,
+    pub line_number: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -45,4 +58,5 @@ pub(crate) struct Response {
     pub headers: HashMap<String, String>,
     pub ignore_paths: Vec<String>,
     pub body: Option<String>,
+    pub line_number: usize,
 }

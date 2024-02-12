@@ -94,8 +94,8 @@ async fn main() {
         if let Err(errors) = result {
             catched_error = true;
             for error in errors {
-                if let Err(err) = writeln!(writter, "{}: Error: {}", file, error) {
-                    eprintln!("Error: {}", err);
+                if let Err(err) = writeln!(writter, "{}: {}", file, error) {
+                    eprintln!("{}", err);
                     std::process::exit(Code::INTERAL_ERROR);
                 }
             }
