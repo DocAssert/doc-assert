@@ -1,5 +1,5 @@
 use regex::Regex;
-use std::{fmt, sync::Once};
+use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Path<'a> {
@@ -44,19 +44,6 @@ impl<'a> fmt::Display for Key<'a> {
     }
 }
 
-static INIT: Once = Once::new();
-static mut REGEX: *const Regex = std::ptr::null();
-
-fn get_regex() -> &'static Regex {
-    unsafe {
-        INIT.call_once(|| {
-            let regex = Regex::new(r"^\$\.?(([a-zA-Z_][a-zA-Z0-9_]*)*(\[\d+\]|\[\d*:\d*\]|(\[\*\]))?)(\.((([a-zA-Z_][a-zA-Z0-9_]*)(\[\d+\]|\[\d*:\d*\]|(\[\*\]))?)|\*))*$").unwrap();
-            REGEX = Box::into_raw(Box::new(regex));
-        });
-        &*REGEX
-    }
-}
-
 impl<'a> Path<'a> {
     pub(crate) fn append(&self, next: Key<'a>) -> Path<'a> {
         match self {
@@ -98,7 +85,9 @@ impl<'a> Path<'a> {
     }
 
     pub(crate) fn from_jsonpath(jsonpath: &'a str) -> Result<Self, Box<dyn std::error::Error>> {
-        let re = get_regex();
+        let re = Regex::new(
+            r"^\$\.?(([a-zA-Z_][a-zA-Z0-9_]*)*(\[\d+\]|\[\d*:\d*\]|(\[\*\]))?)(\.((([a-zA-Z_][a-zA-Z0-9_]*)(\[\d+\]|\[\d*:\d*\]|(\[\*\]))?)|\*))*$",
+        )?;
 
         if !re.is_match(jsonpath) {
             return Err("Invalid JSONPath".into());
