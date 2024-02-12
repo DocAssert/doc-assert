@@ -120,8 +120,8 @@ fn get_response(code_block_line_no: usize, code: String) -> Result<Response, Str
     }
     let http_code = parts[1]
         .parse::<u16>()
-        .map_err(|err| format!("invalid HTTP code: {}", err.to_string()))?;
-    if http_code < 100 || http_code > 599 {
+        .map_err(|err| format!("invalid HTTP code: {}", err))?;
+    if !(100..=599).contains(&http_code) {
         return Err(format!("HTTP code {} outside of valid range", http_code));
     }
 
