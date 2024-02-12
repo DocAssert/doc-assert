@@ -11,10 +11,15 @@ use crate::json_diff::{diff, CompareMode, Config};
 pub(crate) async fn execute(base_url: &str, test_case: TestCase) -> Result<(), String> {
     let test_request = test_case.request;
     let test_request_line_number = test_request.line_number;
+    let http_method = &test_request.http_method.clone();
+    let uri = &test_request.uri.clone();
     let response = get_response(base_url, test_request).await.map_err(|err| {
         format!(
-            "error executing request defined at line {}: {}",
-            test_request_line_number, err
+            "error executing request {} {} defined at line {}: {}",
+            http_method,
+            uri,
+            test_request_line_number,
+            err
         )
     })?;
     let test_response = test_case.response;
@@ -23,8 +28,11 @@ pub(crate) async fn execute(base_url: &str, test_case: TestCase) -> Result<(), S
         .await
         .map_err(|err| {
             format!(
-                "error asserting response defined at line {}: {}",
-                test_response_line_number, err
+                "error asserting response from {} {} defined at line {}: {}",
+                http_method,
+                uri,
+                test_response_line_number,
+                err
             )
         })
 }
@@ -133,6 +141,7 @@ mod tests {
         let header_value = "application/json";
         let request_body = "{\"name\":\"test\"}";
         let response_body = "{\"id\": 1, \"name\": \"John\"}";
+        let response_body1 = "{\"id\": 1, \"name\": \"John1\"}";
         let response_status = 201;
         let mut server = mockito::Server::new();
         server
@@ -143,7 +152,7 @@ mod tests {
             ))
             .with_header(header_name, header_value)
             .with_status(response_status)
-            .with_body(response_body)
+            .with_body(response_body1)
             .create();
 
         let test_case = TestCase {
