@@ -4,6 +4,7 @@ use std::iter::Enumerate;
 use std::str::{FromStr, Lines};
 
 use crate::domain::{HttpMethod, Request, Response, TestCase};
+use crate::json_diff::path::JSONPath;
 
 const DOC_ASSERT_REQUEST: &str = "```docassertrequest";
 const DOC_ASSERT_RESPONSE: &str = "```docassertresponse";
@@ -77,7 +78,11 @@ fn get_ignore_path(s: &str) -> Result<String, String> {
     let mut path = no_whitespace.split(":#").skip(1).collect::<String>();
     path.remove(0);
     path.pop();
-    // TODO add validation of ignore path
+
+    if let Err(e) = path.jsonpath() {
+        return Err(format!("Invalid ignore path {}", e));
+    }
+
     Ok(path)
 }
 
@@ -198,6 +203,6 @@ mod tests {
             test_cases[0].response.body.as_ref().unwrap(),
             "{\"id\":1,\"name\":\"test\"}"
         );
-        assert_eq!(test_cases[0].response.ignore_paths[0], "id".to_string());
+        assert_eq!(test_cases[0].response.ignore_paths[0], "$.id".to_string());
     }
 }
