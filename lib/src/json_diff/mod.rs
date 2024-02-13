@@ -688,8 +688,9 @@ mod test {
         let diffs = diff(
             &expected_json,
             &actual_json,
-            Config::new(CompareMode::Inclusive),
+            Config::new(CompareMode::Strict),
         );
+
         assert_eq!(diffs.len(), 20);
 
         let diffs = diff(
@@ -697,6 +698,7 @@ mod test {
             &actual_json,
             Config::new(CompareMode::Strict).ignore_path("$.user.name".jsonpath().unwrap()),
         );
+
         assert_eq!(diffs.len(), 19);
 
         let diffs = diff(
