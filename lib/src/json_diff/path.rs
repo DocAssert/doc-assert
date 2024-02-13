@@ -61,20 +61,20 @@ impl<'a> Path<'a> {
             (Path::Root, Path::Root) => true,
             (Path::Root, Path::Keys(_)) => true,
             (Path::Keys(_), Path::Root) => false,
-            (Path::Keys(actual), Path::Keys(expected)) => {
-                if actual.len() > expected.len() {
+            (Path::Keys(expected), Path::Keys(actual)) => {
+                if expected.len() > actual.len() {
                     return false;
                 }
 
-                actual
+                expected
                     .iter()
-                    .zip(expected.iter())
-                    .all(|(actual, expected)| {
-                        if actual == expected {
+                    .zip(actual.iter())
+                    .all(|(expected, actual)| {
+                        if expected == actual {
                             return true;
                         }
 
-                        match (actual, expected) {
+                        match (expected, actual) {
                             (Key::Wildcard, Key::Field(_)) => return true,
                             (Key::WildcardArray, Key::Idx(_)) => return true,
                             (Key::IdxRange(a, b), Key::Idx(c)) => return a <= c && c < b,

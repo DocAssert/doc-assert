@@ -9,8 +9,8 @@ use std::{collections::HashSet, fmt};
 /// Mode for how JSON values should be compared.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum CompareMode {
-    /// The two JSON values don't have to be exactly equal. The "actual" value is only required to
-    /// be "contained" inside "expected". See [crate documentation](index.html) for examples.
+    /// The two JSON values don't have to be exactly equal. The "expected" value is only required to
+    /// be "contained" inside "actual". See [crate documentation](index.html) for examples.
     ///
     /// The mode used with [`assert_json_include`].
     Inclusive,
@@ -77,35 +77,35 @@ impl<'a> Config<'a> {
 }
 
 pub(crate) fn diff<'a>(
-    actual: &'a Value,
     expected: &'a Value,
+    actual: &'a Value,
     config: Config<'a>,
 ) -> Vec<Difference<'a>> {
     let mut acc = vec![];
-    diff_with(actual, expected, config, Path::Root, &mut acc);
+    diff_with(expected, actual, config, Path::Root, &mut acc);
     acc
 }
 
 fn diff_with<'a>(
-    actual: &'a Value,
     expected: &'a Value,
+    actual: &'a Value,
     config: Config<'a>,
     path: Path<'a>,
     acc: &mut Vec<Difference<'a>>,
 ) {
     let mut folder = DiffFolder {
-        expected,
+        actual,
         path,
         acc,
         config,
     };
 
-    fold_json(actual, &mut folder);
+    fold_json(expected, &mut folder);
 }
 
 #[derive(Debug)]
 struct DiffFolder<'a, 'b> {
-    expected: &'a Value,
+    actual: &'a Value,
     path: Path<'a>,
     acc: &'b mut Vec<Difference<'a>>,
     config: Config<'a>,
@@ -113,15 +113,15 @@ struct DiffFolder<'a, 'b> {
 
 macro_rules! direct_compare {
     ($name:ident) => {
-        fn $name(&mut self, actual: &'a Value) {
-            if self.expected != actual {
+        fn $name(&mut self, expected: &'a Value) {
+            if self.actual != expected {
                 if self.config.to_ignore(&self.path) {
                     return;
                 }
 
                 self.acc.push(Difference {
-                    actual: Some(actual),
-                    expected: Some(&self.expected),
+                    expected: Some(expected),
+                    actual: Some(&self.actual),
                     path: self.path.clone(),
                     config: self.config.clone(),
                 });
@@ -135,10 +135,10 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
     direct_compare!(on_bool);
     direct_compare!(on_string);
 
-    fn on_number(&mut self, actual: &'a Value) {
+    fn on_number(&mut self, expected: &'a Value) {
         let is_equal = match self.config.numeric_mode {
-            NumericMode::Strict => self.expected == actual,
-            NumericMode::AssumeFloat => self.expected.as_f64() == actual.as_f64(),
+            NumericMode::Strict => self.actual == expected,
+            NumericMode::AssumeFloat => self.actual.as_f64() == expected.as_f64(),
         };
 
         if self.config.to_ignore(&self.path) {
@@ -147,33 +147,33 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
 
         if !is_equal {
             self.acc.push(Difference {
-                actual: Some(actual),
-                expected: Some(self.expected),
+                expected: Some(expected),
+                actual: Some(self.actual),
                 path: self.path.clone(),
                 config: self.config.clone(),
             });
         }
     }
 
-    fn on_array(&mut self, actual: &'a Value) {
-        if let Some(expected) = self.expected.as_array() {
-            let actual = actual.as_array().unwrap();
+    fn on_array(&mut self, expected: &'a Value) {
+        if let Some(actual) = self.actual.as_array() {
+            let expected = expected.as_array().unwrap();
 
             match self.config.compare_mode {
                 CompareMode::Inclusive => {
-                    for (idx, expected) in expected.iter().enumerate() {
+                    for (idx, actual) in actual.iter().enumerate() {
                         let path = self.path.append(Key::Idx(idx));
 
-                        if let Some(actual) = actual.get(idx) {
-                            diff_with(actual, expected, self.config.clone(), path, self.acc)
+                        if let Some(expected) = expected.get(idx) {
+                            diff_with(expected, actual, self.config.clone(), path, self.acc)
                         } else {
                             if self.config.to_ignore(&path) {
                                 continue;
                             }
 
                             self.acc.push(Difference {
-                                actual: None,
-                                expected: Some(self.expected),
+                                expected: None,
+                                actual: Some(self.actual),
                                 path,
                                 config: self.config.clone(),
                             });
@@ -181,38 +181,38 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
                     }
                 }
                 CompareMode::Strict => {
-                    let all_keys = expected
+                    let all_keys = actual
                         .indexes()
                         .into_iter()
-                        .chain(actual.indexes())
+                        .chain(expected.indexes())
                         .collect::<HashSet<_>>();
                     for key in all_keys {
                         let path = self.path.append(Key::Idx(key));
 
-                        match (actual.get(key), expected.get(key)) {
-                            (Some(actual), Some(expected)) => {
-                                diff_with(actual, expected, self.config.clone(), path, self.acc);
+                        match (expected.get(key), actual.get(key)) {
+                            (Some(expected), Some(actual)) => {
+                                diff_with(expected, actual, self.config.clone(), path, self.acc);
                             }
-                            (None, Some(expected)) => {
+                            (None, Some(actual)) => {
                                 if self.config.to_ignore(&path) {
                                     continue;
                                 }
 
                                 self.acc.push(Difference {
-                                    actual: None,
-                                    expected: Some(expected),
+                                    expected: None,
+                                    actual: Some(actual),
                                     path,
                                     config: self.config.clone(),
                                 });
                             }
-                            (Some(actual), None) => {
+                            (Some(expected), None) => {
                                 if self.config.to_ignore(&path) {
                                     continue;
                                 }
 
                                 self.acc.push(Difference {
-                                    actual: Some(actual),
-                                    expected: None,
+                                    expected: Some(expected),
+                                    actual: None,
                                     path,
                                     config: self.config.clone(),
                                 });
@@ -230,33 +230,33 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
             }
 
             self.acc.push(Difference {
-                actual: Some(actual),
-                expected: Some(self.expected),
+                expected: Some(expected),
+                actual: Some(self.actual),
                 path: self.path.clone(),
                 config: self.config.clone(),
             });
         }
     }
 
-    fn on_object(&mut self, actual: &'a Value) {
-        if let Some(expected) = self.expected.as_object() {
-            let actual = actual.as_object().unwrap();
+    fn on_object(&mut self, expected: &'a Value) {
+        if let Some(actual) = self.actual.as_object() {
+            let expected = expected.as_object().unwrap();
 
             match self.config.compare_mode {
                 CompareMode::Inclusive => {
-                    for (key, expected) in expected.iter() {
+                    for (key, actual) in actual.iter() {
                         let path = self.path.append(Key::Field(key));
 
-                        if let Some(actual) = actual.get(key) {
-                            diff_with(actual, expected, self.config.clone(), path, self.acc)
+                        if let Some(expected) = expected.get(key) {
+                            diff_with(expected, actual, self.config.clone(), path, self.acc)
                         } else {
                             if self.config.to_ignore(&path) {
                                 continue;
                             }
 
                             self.acc.push(Difference {
-                                actual: None,
-                                expected: Some(self.expected),
+                                expected: None,
+                                actual: Some(self.actual),
                                 path,
                                 config: self.config.clone(),
                             });
@@ -264,34 +264,34 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
                     }
                 }
                 CompareMode::Strict => {
-                    let all_keys = expected.keys().chain(actual.keys()).collect::<HashSet<_>>();
+                    let all_keys = actual.keys().chain(expected.keys()).collect::<HashSet<_>>();
                     for key in all_keys {
                         let path = self.path.append(Key::Field(key));
 
-                        match (actual.get(key), expected.get(key)) {
-                            (Some(actual), Some(expected)) => {
-                                diff_with(actual, expected, self.config.clone(), path, self.acc);
+                        match (expected.get(key), actual.get(key)) {
+                            (Some(expected), Some(actual)) => {
+                                diff_with(expected, actual, self.config.clone(), path, self.acc);
                             }
-                            (None, Some(expected)) => {
+                            (None, Some(actual)) => {
                                 if self.config.to_ignore(&path) {
                                     continue;
                                 }
 
                                 self.acc.push(Difference {
-                                    actual: None,
-                                    expected: Some(expected),
+                                    expected: None,
+                                    actual: Some(actual),
                                     path,
                                     config: self.config.clone(),
                                 });
                             }
-                            (Some(actual), None) => {
+                            (Some(expected), None) => {
                                 if self.config.to_ignore(&path) {
                                     continue;
                                 }
 
                                 self.acc.push(Difference {
-                                    actual: Some(actual),
-                                    expected: None,
+                                    expected: Some(expected),
+                                    actual: None,
                                     path,
                                     config: self.config.clone(),
                                 });
@@ -309,8 +309,8 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
             }
 
             self.acc.push(Difference {
-                actual: Some(actual),
-                expected: Some(self.expected),
+                expected: Some(expected),
+                actual: Some(self.actual),
                 path: self.path.clone(),
                 config: self.config.clone(),
             });
@@ -321,8 +321,8 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
 #[derive(Debug, PartialEq)]
 pub(crate) struct Difference<'a> {
     path: Path<'a>,
-    actual: Option<&'a Value>,
     expected: Option<&'a Value>,
+    actual: Option<&'a Value>,
     config: Config<'a>,
 }
 
@@ -330,44 +330,44 @@ impl<'a> fmt::Display for Difference<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let json_to_string = |json: &Value| serde_json::to_string_pretty(json).unwrap();
 
-        match (&self.config.compare_mode, &self.actual, &self.expected) {
-            (CompareMode::Inclusive, Some(actual), Some(expected)) => {
+        match (&self.config.compare_mode, &self.expected, &self.actual) {
+            (CompareMode::Inclusive, Some(expected), Some(actual)) => {
                 writeln!(f, "json atoms at path \"{}\" are not equal:", self.path)?;
-                writeln!(f, "    expected:")?;
-                writeln!(f, "{}", json_to_string(expected).indent(8))?;
                 writeln!(f, "    actual:")?;
-                write!(f, "{}", json_to_string(actual).indent(8))?;
+                writeln!(f, "{}", json_to_string(actual).indent(8))?;
+                writeln!(f, "    expected:")?;
+                write!(f, "{}", json_to_string(expected).indent(8))?;
             }
-            (CompareMode::Inclusive, None, Some(_expected)) => {
+            (CompareMode::Inclusive, None, Some(_actual)) => {
                 write!(
                     f,
-                    "json atom at path \"{}\" is missing from actual",
+                    "json atom at path \"{}\" is missing from expected",
                     self.path
                 )?;
             }
-            (CompareMode::Inclusive, Some(_actual), None) => {
-                unreachable!("stuff missing actual wont produce an error")
+            (CompareMode::Inclusive, Some(_expected), None) => {
+                unreachable!("stuff missing expected wont produce an error")
             }
             (CompareMode::Inclusive, None, None) => unreachable!("can't both be missing"),
 
-            (CompareMode::Strict, Some(actual), Some(expected)) => {
+            (CompareMode::Strict, Some(expected), Some(actual)) => {
                 writeln!(f, "json atoms at path \"{}\" are not equal:", self.path)?;
-                writeln!(f, "    expected:")?;
-                writeln!(f, "{}", json_to_string(actual).indent(8))?;
                 writeln!(f, "    actual:")?;
-                write!(f, "{}", json_to_string(expected).indent(8))?;
+                writeln!(f, "{}", json_to_string(expected).indent(8))?;
+                writeln!(f, "    expected:")?;
+                write!(f, "{}", json_to_string(actual).indent(8))?;
             }
             (CompareMode::Strict, None, Some(_)) => {
                 write!(
                     f,
-                    "json atom at path \"{}\" is missing from actual",
+                    "json atom at path \"{}\" is missing from expected",
                     self.path
                 )?;
             }
             (CompareMode::Strict, Some(_), None) => {
                 write!(
                     f,
-                    "json atom at path \"{}\" is missing from expected",
+                    "json atom at path \"{}\" is missing from actual",
                     self.path
                 )?;
             }
@@ -438,50 +438,50 @@ mod test {
         );
         assert_eq!(diffs.len(), 1);
 
-        let actual = json!(1);
         let expected = json!(1);
-        let diffs = diff(&actual, &expected, Config::new(CompareMode::Inclusive));
+        let actual = json!(1);
+        let diffs = diff(&expected, &actual, Config::new(CompareMode::Inclusive));
         assert_eq!(diffs, vec![]);
 
-        let actual = json!(2);
-        let expected = json!(1);
-        let diffs = diff(&actual, &expected, Config::new(CompareMode::Inclusive));
-        assert_eq!(diffs.len(), 1);
-
-        let actual = json!(1);
         let expected = json!(2);
-        let diffs = diff(&actual, &expected, Config::new(CompareMode::Inclusive));
+        let actual = json!(1);
+        let diffs = diff(&expected, &actual, Config::new(CompareMode::Inclusive));
         assert_eq!(diffs.len(), 1);
 
-        let actual = json!(1.0);
+        let expected = json!(1);
+        let actual = json!(2);
+        let diffs = diff(&expected, &actual, Config::new(CompareMode::Inclusive));
+        assert_eq!(diffs.len(), 1);
+
         let expected = json!(1.0);
-        let diffs = diff(&actual, &expected, Config::new(CompareMode::Inclusive));
+        let actual = json!(1.0);
+        let diffs = diff(&expected, &actual, Config::new(CompareMode::Inclusive));
         assert_eq!(diffs, vec![]);
 
-        let actual = json!(1);
-        let expected = json!(1.0);
-        let diffs = diff(&actual, &expected, Config::new(CompareMode::Inclusive));
-        assert_eq!(diffs.len(), 1);
-
-        let actual = json!(1.0);
         let expected = json!(1);
-        let diffs = diff(&actual, &expected, Config::new(CompareMode::Inclusive));
+        let actual = json!(1.0);
+        let diffs = diff(&expected, &actual, Config::new(CompareMode::Inclusive));
         assert_eq!(diffs.len(), 1);
 
-        let actual = json!(1);
         let expected = json!(1.0);
+        let actual = json!(1);
+        let diffs = diff(&expected, &actual, Config::new(CompareMode::Inclusive));
+        assert_eq!(diffs.len(), 1);
+
+        let expected = json!(1);
+        let actual = json!(1.0);
         let diffs = diff(
-            &actual,
             &expected,
+            &actual,
             Config::new(CompareMode::Inclusive).numeric_mode(NumericMode::AssumeFloat),
         );
         assert_eq!(diffs, vec![]);
 
-        let actual = json!(1.0);
-        let expected = json!(1);
+        let expected = json!(1.0);
+        let actual = json!(1);
         let diffs = diff(
-            &actual,
             &expected,
+            &actual,
             Config::new(CompareMode::Inclusive).numeric_mode(NumericMode::AssumeFloat),
         );
         assert_eq!(diffs, vec![]);
@@ -490,123 +490,123 @@ mod test {
     #[test]
     fn test_diffing_array() {
         // empty
-        let actual = json!([]);
         let expected = json!([]);
-        let diffs = diff(&actual, &expected, Config::new(CompareMode::Inclusive));
+        let actual = json!([]);
+        let diffs = diff(&expected, &actual, Config::new(CompareMode::Inclusive));
         assert_eq!(diffs, vec![]);
 
-        let actual = json!([1]);
-        let expected = json!([]);
-        let diffs = diff(&actual, &expected, Config::new(CompareMode::Inclusive));
+        let expected = json!([1]);
+        let actual = json!([]);
+        let diffs = diff(&expected, &actual, Config::new(CompareMode::Inclusive));
         assert_eq!(diffs.len(), 0);
 
-        let actual = json!([]);
-        let expected = json!([1]);
-        let diffs = diff(&actual, &expected, Config::new(CompareMode::Inclusive));
+        let expected = json!([]);
+        let actual = json!([1]);
+        let diffs = diff(&expected, &actual, Config::new(CompareMode::Inclusive));
         assert_eq!(diffs.len(), 1);
 
         // eq
+        let expected = json!([1]);
         let actual = json!([1]);
-        let expected = json!([1]);
-        let diffs = diff(&actual, &expected, Config::new(CompareMode::Inclusive));
-        assert_eq!(diffs, vec![]);
-
-        // actual longer
-        let actual = json!([1, 2]);
-        let expected = json!([1]);
-        let diffs = diff(&actual, &expected, Config::new(CompareMode::Inclusive));
+        let diffs = diff(&expected, &actual, Config::new(CompareMode::Inclusive));
         assert_eq!(diffs, vec![]);
 
         // expected longer
-        let actual = json!([1]);
         let expected = json!([1, 2]);
-        let diffs = diff(&actual, &expected, Config::new(CompareMode::Inclusive));
+        let actual = json!([1]);
+        let diffs = diff(&expected, &actual, Config::new(CompareMode::Inclusive));
+        assert_eq!(diffs, vec![]);
+
+        // actual longer
+        let expected = json!([1]);
+        let actual = json!([1, 2]);
+        let diffs = diff(&expected, &actual, Config::new(CompareMode::Inclusive));
         assert_eq!(diffs.len(), 1);
 
         // eq length but different
-        let actual = json!([1, 3]);
-        let expected = json!([1, 2]);
-        let diffs = diff(&actual, &expected, Config::new(CompareMode::Inclusive));
+        let expected = json!([1, 3]);
+        let actual = json!([1, 2]);
+        let diffs = diff(&expected, &actual, Config::new(CompareMode::Inclusive));
         assert_eq!(diffs.len(), 1);
 
         // different types
-        let actual = json!(1);
-        let expected = json!([1]);
-        let diffs = diff(&actual, &expected, Config::new(CompareMode::Inclusive));
+        let expected = json!(1);
+        let actual = json!([1]);
+        let diffs = diff(&expected, &actual, Config::new(CompareMode::Inclusive));
         assert_eq!(diffs.len(), 1);
 
-        let actual = json!([1]);
-        let expected = json!(1);
-        let diffs = diff(&actual, &expected, Config::new(CompareMode::Inclusive));
+        let expected = json!([1]);
+        let actual = json!(1);
+        let diffs = diff(&expected, &actual, Config::new(CompareMode::Inclusive));
         assert_eq!(diffs.len(), 1);
     }
 
     #[test]
     fn test_array_strict() {
-        let actual = json!([]);
         let expected = json!([]);
-        let diffs = diff(&actual, &expected, Config::new(CompareMode::Strict));
+        let actual = json!([]);
+        let diffs = diff(&expected, &actual, Config::new(CompareMode::Strict));
         assert_eq!(diffs.len(), 0);
 
+        let expected = json!([1, 2]);
         let actual = json!([1, 2]);
-        let expected = json!([1, 2]);
-        let diffs = diff(&actual, &expected, Config::new(CompareMode::Strict));
+        let diffs = diff(&expected, &actual, Config::new(CompareMode::Strict));
         assert_eq!(diffs.len(), 0);
 
-        let actual = json!([1]);
-        let expected = json!([1, 2]);
-        let diffs = diff(&actual, &expected, Config::new(CompareMode::Strict));
+        let expected = json!([1]);
+        let actual = json!([1, 2]);
+        let diffs = diff(&expected, &actual, Config::new(CompareMode::Strict));
         assert_eq!(diffs.len(), 1);
 
-        let actual = json!([1, 2]);
-        let expected = json!([1]);
-        let diffs = diff(&actual, &expected, Config::new(CompareMode::Strict));
+        let expected = json!([1, 2]);
+        let actual = json!([1]);
+        let diffs = diff(&expected, &actual, Config::new(CompareMode::Strict));
         assert_eq!(diffs.len(), 1);
     }
 
     #[test]
     fn test_object() {
-        let actual = json!({});
         let expected = json!({});
-        let diffs = diff(&actual, &expected, Config::new(CompareMode::Inclusive));
+        let actual = json!({});
+        let diffs = diff(&expected, &actual, Config::new(CompareMode::Inclusive));
         assert_eq!(diffs, vec![]);
 
-        let actual = json!({ "a": 1 });
         let expected = json!({ "a": 1 });
-        let diffs = diff(&actual, &expected, Config::new(CompareMode::Inclusive));
-        assert_eq!(diffs, vec![]);
-
-        let actual = json!({ "a": 1, "b": 123 });
-        let expected = json!({ "a": 1 });
-        let diffs = diff(&actual, &expected, Config::new(CompareMode::Inclusive));
-        assert_eq!(diffs, vec![]);
-
         let actual = json!({ "a": 1 });
-        let expected = json!({ "b": 1 });
-        let diffs = diff(&actual, &expected, Config::new(CompareMode::Inclusive));
+        let diffs = diff(&expected, &actual, Config::new(CompareMode::Inclusive));
+        assert_eq!(diffs, vec![]);
+
+        let expected = json!({ "a": 1, "b": 123 });
+        let actual = json!({ "a": 1 });
+        let diffs = diff(&expected, &actual, Config::new(CompareMode::Inclusive));
+        assert_eq!(diffs, vec![]);
+
+        let expected = json!({ "a": 1 });
+        let actual = json!({ "b": 1 });
+        let diffs = diff(&expected, &actual, Config::new(CompareMode::Inclusive));
         assert_eq!(diffs.len(), 1);
 
-        let actual = json!({ "a": 1 });
-        let expected = json!({ "a": 2 });
-        let diffs = diff(&actual, &expected, Config::new(CompareMode::Inclusive));
+        let expected = json!({ "a": 1 });
+        let actual = json!({ "a": 2 });
+        let diffs = diff(&expected, &actual, Config::new(CompareMode::Inclusive));
         assert_eq!(diffs.len(), 1);
 
-        let actual = json!({ "a": { "b": true } });
-        let expected = json!({ "a": {} });
-        let diffs = diff(&actual, &expected, Config::new(CompareMode::Inclusive));
+        let expected = json!({ "a": { "b": true } });
+        let actual = json!({ "a": {} });
+        let diffs = diff(&expected, &actual, Config::new(CompareMode::Inclusive));
         assert_eq!(diffs, vec![]);
     }
 
     #[test]
     fn test_object_strict() {
-        let actual = json!({});
-        let expected = json!({ "a": 1 });
-        let diffs = diff(&actual, &expected, Config::new(CompareMode::Strict));
+        let expected = json!({});
+        let actual = json!({ "a": 1 });
+        let diffs = diff(&expected, &actual, Config::new(CompareMode::Strict));
         assert_eq!(diffs.len(), 1);
 
-        let actual = json!({ "a": 1 });
-        let expected = json!({});
-        let diffs = diff(&actual, &expected, Config::new(CompareMode::Strict));
+        let expected = json!({ "a": 1 });
+        let actual = json!({});
+        let diffs = diff(&expected, &actual, Config::new(CompareMode::Strict));
         assert_eq!(diffs.len(), 1);
 
         let json = json!({ "a": 1 });
@@ -616,92 +616,92 @@ mod test {
 
     #[test]
     fn test_object_deep_path() {
-        let actual = json!({ "id": 1, "name": "John" });
-        let expected = json!({ "id": 2, "name": "John" });
+        let expected = json!({ "id": 1, "name": "John" });
+        let actual = json!({ "id": 2, "name": "John" });
         let ignore_path = Path::from_jsonpath("$.id").unwrap();
         let diffs = diff(
-            &actual,
             &expected,
+            &actual,
             Config::new(CompareMode::Strict).ignore_path(ignore_path),
         );
         assert_eq!(diffs.len(), 0);
 
-        let actual = json!({ "a": { "b": [{"c": 0}, { "c": 1 }] } });
-        let expected = json!({ "a": { "b": [{"c": 0}, { "c": 2 }] } });
+        let expected = json!({ "a": { "b": [{"c": 0}, { "c": 1 }] } });
+        let actual = json!({ "a": { "b": [{"c": 0}, { "c": 2 }] } });
         let ignore_path = Path::from_jsonpath("$.a.b[*].c").unwrap();
 
         let config = Config::new(CompareMode::Strict).ignore_path(ignore_path);
 
-        let diffs = diff(&actual, &expected, config);
+        let diffs = diff(&expected, &actual, config);
         assert_eq!(diffs.len(), 0);
 
         // New test cases
         // Test deeper nesting with ignored path
-        let actual = json!({ "a": { "b": { "d": { "e": 3 } } } });
-        let expected = json!({ "a": { "b": { "d": { "e": 4 } } } });
+        let expected = json!({ "a": { "b": { "d": { "e": 3 } } } });
+        let actual = json!({ "a": { "b": { "d": { "e": 4 } } } });
         let ignore_path = Path::from_jsonpath("$.a.b.d.e").unwrap();
 
         let config = Config::new(CompareMode::Strict).ignore_path(ignore_path);
-        let diffs = diff(&actual, &expected, config);
+        let diffs = diff(&expected, &actual, config);
         assert_eq!(diffs.len(), 0);
 
         // Test array within deep object structure
-        let actual = json!({ "a": { "b": [{ "d": [1, 2, 3] }] } });
-        let expected = json!({ "a": { "b": [{ "d": [1, 2, 4] }] } });
+        let expected = json!({ "a": { "b": [{ "d": [1, 2, 3] }] } });
+        let actual = json!({ "a": { "b": [{ "d": [1, 2, 4] }] } });
         let ignore_path = Path::from_jsonpath("$.a.b[*].d[*]").unwrap();
 
         let config = Config::new(CompareMode::Strict).ignore_path(ignore_path);
-        let diffs = diff(&actual, &expected, config);
+        let diffs = diff(&expected, &actual, config);
         assert_eq!(diffs.len(), 0);
 
         // Test with multiple ignore paths
-        let actual = json!({ "a": { "x": 1, "y": 2, "z": 3 } });
-        let expected = json!({ "a": { "x": 1, "y": 3, "z": 3 } });
+        let expected = json!({ "a": { "x": 1, "y": 2, "z": 3 } });
+        let actual = json!({ "a": { "x": 1, "y": 3, "z": 3 } });
         let ignore_path1 = Path::from_jsonpath("$.a.x").unwrap();
         let ignore_path2 = Path::from_jsonpath("$.a.y").unwrap();
 
         let config = Config::new(CompareMode::Strict)
             .ignore_path(ignore_path1)
             .ignore_path(ignore_path2);
-        let diffs = diff(&actual, &expected, config);
+        let diffs = diff(&expected, &actual, config);
         assert_eq!(diffs.len(), 0);
 
         // Test ignored path with non-matching element
-        let actual = json!({ "a": { "b": 1, "c": 2 } });
-        let expected = json!({ "a": { "b": 1, "c": 3 } });
+        let expected = json!({ "a": { "b": 1, "c": 2 } });
+        let actual = json!({ "a": { "b": 1, "c": 3 } });
         let ignore_path = Path::from_jsonpath("$.a.d").unwrap();
 
         let config = Config::new(CompareMode::Strict).ignore_path(ignore_path);
-        let diffs = diff(&actual, &expected, config);
+        let diffs = diff(&expected, &actual, config);
         assert_ne!(diffs.len(), 0);
     }
 
     #[test]
     fn test_complex_jsons() {
-        let actual_path = "tests/data/actual.json";
         let expected_path = "tests/data/expected.json";
+        let actual_path = "tests/data/actual.json";
 
-        let actual_json = load_json_from_file(actual_path).expect("Error parsing actual.json");
         let expected_json =
             load_json_from_file(expected_path).expect("Error parsing expected.json");
+        let actual_json = load_json_from_file(actual_path).expect("Error parsing actual.json");
 
         let diffs = diff(
-            &actual_json,
             &expected_json,
+            &actual_json,
             Config::new(CompareMode::Inclusive),
         );
         assert_eq!(diffs.len(), 20);
 
         let diffs = diff(
-            &actual_json,
             &expected_json,
+            &actual_json,
             Config::new(CompareMode::Strict).ignore_path("$.user.name".jsonpath().unwrap()),
         );
         assert_eq!(diffs.len(), 19);
 
         let diffs = diff(
-            &actual_json,
             &expected_json,
+            &actual_json,
             Config::new(CompareMode::Strict)
                 .ignore_path("$.user.name".jsonpath().unwrap())
                 .ignore_path("$.user.profile.age".jsonpath().unwrap()),
@@ -709,8 +709,8 @@ mod test {
         assert_eq!(diffs.len(), 18);
 
         let diffs = diff(
-            &actual_json,
             &expected_json,
+            &actual_json,
             Config::new(CompareMode::Strict)
                 .ignore_path("$.user.name".jsonpath().unwrap())
                 .ignore_path("$.user.profile.age".jsonpath().unwrap())
@@ -719,8 +719,8 @@ mod test {
         assert_eq!(diffs.len(), 17);
 
         let diffs = diff(
-            &actual_json,
             &expected_json,
+            &actual_json,
             Config::new(CompareMode::Strict)
                 .ignore_path("$.user.name".jsonpath().unwrap())
                 .ignore_path("$.user.profile.age".jsonpath().unwrap())
