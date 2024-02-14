@@ -1,13 +1,17 @@
 [![DocAssert](https://github.com/DocAssert/doc-assert/actions/workflows/doc-assert.yml/badge.svg)](https://github.com/DocAssert/doc-assert/actions/workflows/doc-assert.yml)
 
-**DocAssert** is a documentation testing tool that offers a completely new approach.
-Write your documentation as a story you want to tell your users and test it against your API.
+# Welcome to **DocAssert** - Blazing Fast Documentation Testing!
+DocAssert offers a blazing fast, incredibly reliable, and remarkably user-friendly approach to documentation testing. By ensuring your documentation accurately represents your API's behavior, DocAssert empowers you to deliver a trustworthy and engaging narrative to your users. Start transforming your documentation into a verified, living document that enhances user trust and comprehension with DocAssert.
 
 ## How it works?
+DocAssert reads the specified `README.md` file and scans it for code blocks containing descriptions of requests and responses. It then sends these requests to your API and verifies whether the responses match those specified in the documentation. This process ensures that your documentation accurately reflects the capabilities and behavior of your API.
 
-DocAssert reads the specified `README.md` file and scans it for code blocks containing descriptions of requests
-and responses. It then sends these requests to your API and verifies whether the responses match those specified
-in the documentation.
+## Quick Start Guide
+1. **Define your API interactions** in your `README.md` with detailed code blocks for requests and responses.
+1. **Run DocAssert** through your tests or as a standalone command-line tool to verify each documented interaction against your live API.
+1. **Adjust and improve** your documentation based on the test results to ensure accuracy and reliability.
+  
+**DocAssert** seamlessly integrates into your development workflow, offering a straightforward and effective method to enhance the quality and trustworthiness of your API documentation. Whether you're a developer, a technical writer, or a project manager, DocAssert simplifies the process of maintaining up-to-date and verified documentation, fostering confidence among your users and stakeholders.
 
 ### Using test API
 
