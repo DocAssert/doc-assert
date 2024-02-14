@@ -8,6 +8,7 @@ pub struct DocAssert<'a> {
     doc_path: Option<&'a str>,
 }
 
+/// Builder for the assertions
 impl<'a> DocAssert<'a> {
     pub fn new() -> Self {
         Self {
@@ -16,16 +17,19 @@ impl<'a> DocAssert<'a> {
         }
     }
 
+    /// Set the base URL to test against
     pub fn with_url(mut self, url: &'a str) -> Self {
         self.url = Some(url);
         self
     }
 
+    /// Set the path to the documentation file
     pub fn with_doc_path(mut self, doc_path: &'a str) -> Self {
         self.doc_path = Some(doc_path);
         self
     }
 
+    /// Execute the assertions
     pub async fn assert(mut self) -> Result<(), Vec<String>> {
         let url = self.url.take().expect("URL is required");
         let doc_path = self.doc_path.take().expect("Doc path is required");
