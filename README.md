@@ -1,0 +1,1 @@
+[![DocAssert](https://github.com/DocAssert/doc-assert/actions/workflows/rust.yml/badge.svg)](https://github.com/DocAssert/doc-assert/actions/workflows/doc-assert.yml)
