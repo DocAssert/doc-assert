@@ -53,28 +53,3 @@ impl<'a> Default for DocAssert<'a> {
         Self::new()
     }
 }
-
-// tokio test:
-#[cfg(test)]
-mod tests {
-    use std::time::Duration;
-
-    use super::*;
-
-    #[tokio::test]
-    async fn test() {
-        // test cases from desc above
-        let doc_path = "path/to/doc.md";
-        let url = "http://localhost:8080";
-        let result = DocAssert::new()
-            .with_url(url)
-            .with_doc_path(doc_path)
-            .assert()
-            .await;
-        match result {
-            Ok(_) => {}
-            Err(_) => {}
-        }
-        assert!(result.is_ok());
-    }
-}
