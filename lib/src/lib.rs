@@ -8,6 +8,7 @@ pub struct DocAssert<'a> {
     doc_path: Option<&'a str>,
 }
 
+/// Builder for the assertions
 impl<'a> DocAssert<'a> {
     pub fn new() -> Self {
         Self {
@@ -16,16 +17,19 @@ impl<'a> DocAssert<'a> {
         }
     }
 
+    /// Set the base URL to test against
     pub fn with_url(mut self, url: &'a str) -> Self {
         self.url = Some(url);
         self
     }
 
+    /// Set the path to the documentation file
     pub fn with_doc_path(mut self, doc_path: &'a str) -> Self {
         self.doc_path = Some(doc_path);
         self
     }
 
+    /// Execute the assertions
     pub async fn assert(mut self) -> Result<(), Vec<String>> {
         let url = self.url.take().expect("URL is required");
         let doc_path = self.doc_path.take().expect("Doc path is required");
@@ -47,5 +51,30 @@ impl<'a> DocAssert<'a> {
 impl<'a> Default for DocAssert<'a> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// tokio test:
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test() {
+        // test cases from desc above
+        let doc_path = "path/to/doc.md";
+        let url = "http://localhost:8080";
+        let result = DocAssert::new()
+            .with_url(url)
+            .with_doc_path(doc_path)
+            .assert()
+            .await;
+        match result {
+            Ok(_) => {}
+            Err(_) => {}
+        }
+        assert!(result.is_ok());
     }
 }
