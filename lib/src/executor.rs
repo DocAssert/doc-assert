@@ -66,16 +66,16 @@ async fn assert_response(
             );
         }
         let response_body = response.text().await.map_err(|e| e.to_string())?;
-        let lhs =
+        let actual =
             &serde_json::from_str::<serde_json::Value>(response_body.as_str()).map_err(|err| {
                 format!(
                     "error parsing JSON response from the server: {}",
                     test_response.line_number,
                 )
             })?;
-        let rhs = &serde_json::from_str::<serde_json::Value>(test_body.as_str())
+        let expected = &serde_json::from_str::<serde_json::Value>(test_body.as_str())
             .map_err(|err| format!("error parsing JSON: {}", err.to_string()))?;
-        let diff_result = diff(lhs, rhs, diff_config);
+        let diff_result = diff(actual, expected, diff_config);
         if !diff_result.is_empty() {
             return Err(format!(
                 "expected response differs from actual {}",
