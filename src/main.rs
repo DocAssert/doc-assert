@@ -113,7 +113,7 @@ async fn main() {
 
     for file in cli.files.iter() {
         let Some(file) = file.to_str() else {
-            handle_error!(writter, Code::INVALID_ARGUMENT, "Error: Invalid file path");
+            handle_error!(writter, Code::INVALID_ARGUMENT, "error: Invalid file path");
         };
 
         doc_assert = doc_assert.with_doc_path(file);

@@ -49,7 +49,7 @@ pub(crate) fn parse<'a>(path: String) -> Result<Vec<TestCase>, String> {
                 return Err(format!("misplaced variable at line {}: {}", line_no, line));
             }
             let (name, path) = get_variable_template(line)?;
-            responses.last_mut().unwrap().variables.insert(name, path); // unwrap
+            responses.last_mut().unwrap().variables.insert(name, path);
         }
     }
     if requests.len() != responses.len() {
@@ -89,7 +89,7 @@ fn get_ignore_path(s: &str) -> Result<String, String> {
     path.pop();
 
     if let Err(e) = path.jsonpath() {
-        return Err(format!("Invalid ignore path {}", e));
+        return Err(format!("invalid ignore path {}", e));
     }
 
     Ok(path)
@@ -104,7 +104,7 @@ fn get_variable_template(s: &str) -> Result<(String, Path), String> {
     match parts {
         Some(ref mut p) => {
             if p.len() != 2 {
-                return Err(format!("Invalid variable template: {}", s));
+                return Err(format!("invalid variable template: {}", s));
             }
 
             let var_name = p[0].trim();
@@ -112,7 +112,7 @@ fn get_variable_template(s: &str) -> Result<(String, Path), String> {
 
             match response_path.jsonpath() {
                 Ok(p) => return Ok((var_name.to_owned(), p)),
-                Err(e) => return Err(format!("Invalid variable template: {}: {}", s, e)),
+                Err(e) => return Err(format!("invalid variable template: {}: {}", s, e)),
             }
         }
         None => return Err(format!("Invalid variable template: {}", s)),
