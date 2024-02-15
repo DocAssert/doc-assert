@@ -20,6 +20,7 @@ Content-Type: application/json
 }
 ```
 [ignore]: # ($.id)
+[let name = $.user.name]
 
 
 ## Unrelated

@@ -2,20 +2,20 @@ use regex::Regex;
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Path<'a> {
+pub enum Path {
     Root,
-    Keys(Vec<Key<'a>>),
+    Keys(Vec<Key>),
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum Key<'a> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Key {
     Idx(usize),
     IdxRange(usize, usize),
     IdxRangeStart(usize),
     IdxRangeEnd(usize),
     Wildcard,
     WildcardArray,
-    Field(&'a str),
+    Field(String),
 }
 
 // We cannot implement FromStr for Path because it would confict with timelines
@@ -30,7 +30,7 @@ impl JSONPath for str {
     }
 }
 
-impl<'a> fmt::Display for Key<'a> {
+impl fmt::Display for Key {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Key::Idx(idx) => write!(f, "[{}]", idx),
@@ -44,8 +44,8 @@ impl<'a> fmt::Display for Key<'a> {
     }
 }
 
-impl<'a> Path<'a> {
-    pub(crate) fn append(&self, next: Key<'a>) -> Path<'a> {
+impl Path {
+    pub(crate) fn append(&self, next: Key) -> Path {
         match self {
             Path::Root => Path::Keys(vec![next]),
             Path::Keys(list) => {
@@ -87,7 +87,7 @@ impl<'a> Path<'a> {
         }
     }
 
-    pub(crate) fn from_jsonpath(jsonpath: &'a str) -> Result<Self, Box<dyn std::error::Error>> {
+    pub(crate) fn from_jsonpath(jsonpath: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let re = Regex::new(
             r"^\$\.?(([a-zA-Z_][a-zA-Z0-9_]*)*(\[\d+\]|\[\d*:\d*\]|(\[\*\]))?)(\.((([a-zA-Z_][a-zA-Z0-9_]*)(\[\d+\]|\[\d*:\d*\]|(\[\*\]))?)|\*))*$",
         )?;
@@ -113,7 +113,7 @@ impl<'a> Path<'a> {
         Ok(Path::Keys(keys))
     }
 
-    fn parse_token(token: &'a str) -> Result<Key<'a>, Box<dyn std::error::Error>> {
+    fn parse_token(token: &str) -> Result<Key, Box<dyn std::error::Error>> {
         let mut token = token;
         let mut from_array = false;
 
@@ -148,12 +148,12 @@ impl<'a> Path<'a> {
 
         match token.parse::<usize>() {
             Ok(idx) => Ok(Key::Idx(idx)),
-            Err(_) => Ok(Key::Field(token)),
+            Err(_) => Ok(Key::Field(token.to_owned())),
         }
     }
 }
 
-impl<'a> fmt::Display for Path<'a> {
+impl fmt::Display for Path {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Path::Root => write!(f, "(root)"),
@@ -176,17 +176,21 @@ mod test {
         let path: Path = "$.a.b.c".jsonpath().unwrap();
         assert_eq!(
             path,
-            Path::Keys(vec![Key::Field("a"), Key::Field("b"), Key::Field("c"),])
+            Path::Keys(vec![
+                Key::Field("a".into()),
+                Key::Field("b".into()),
+                Key::Field("c".into()),
+            ])
         );
 
         let path = "$.a[0].b.c".jsonpath().unwrap();
         assert_eq!(
             path,
             Path::Keys(vec![
-                Key::Field("a"),
+                Key::Field("a".into()),
                 Key::Idx(0),
-                Key::Field("b"),
-                Key::Field("c"),
+                Key::Field("b".into()),
+                Key::Field("c".into()),
             ])
         );
 
@@ -194,11 +198,11 @@ mod test {
         assert_eq!(
             path,
             Path::Keys(vec![
-                Key::Field("a"),
+                Key::Field("a".into()),
                 Key::Idx(0),
-                Key::Field("b"),
+                Key::Field("b".into()),
                 Key::Idx(1),
-                Key::Field("c"),
+                Key::Field("c".into()),
             ])
         );
 
@@ -206,11 +210,11 @@ mod test {
         assert_eq!(
             path,
             Path::Keys(vec![
-                Key::Field("a"),
+                Key::Field("a".into()),
                 Key::Idx(0),
-                Key::Field("b"),
+                Key::Field("b".into()),
                 Key::IdxRange(1, 2),
-                Key::Field("c"),
+                Key::Field("c".into()),
             ])
         );
 
@@ -218,12 +222,12 @@ mod test {
         assert_eq!(
             path,
             Path::Keys(vec![
-                Key::Field("a"),
+                Key::Field("a".into()),
                 Key::Idx(0),
-                Key::Field("b"),
+                Key::Field("b".into()),
                 Key::WildcardArray,
                 Key::Wildcard,
-                Key::Field("c"),
+                Key::Field("c".into()),
                 Key::IdxRange(0, 1),
             ])
         );
@@ -233,12 +237,12 @@ mod test {
             path,
             Path::Keys(vec![
                 Key::WildcardArray,
-                Key::Field("a"),
+                Key::Field("a".into()),
                 Key::IdxRangeStart(3),
-                Key::Field("b"),
+                Key::Field("b".into()),
                 Key::IdxRangeStart(4),
                 Key::Wildcard,
-                Key::Field("c"),
+                Key::Field("c".into()),
                 Key::IdxRange(0, 1),
             ])
         );

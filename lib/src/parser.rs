@@ -4,15 +4,16 @@ use std::iter::Enumerate;
 use std::str::{FromStr, Lines};
 
 use crate::domain::{HttpMethod, Request, Response, TestCase};
-use crate::json_diff::path::JSONPath;
+use crate::json_diff::path::{JSONPath, Path};
 
 const DOC_ASSERT_REQUEST: &str = "```docassertrequest";
 const DOC_ASSERT_RESPONSE: &str = "```docassertresponse";
 const IGNORE_PREFIX: &str = "[ignore]";
+const VARIABLE_PREFIX: &str = "[let ";
 
-pub(crate) fn parse(path: String) -> Result<Vec<TestCase>, String> {
+pub(crate) fn parse<'a>(path: String) -> Result<Vec<TestCase>, String> {
     let (mut requests, mut responses) = (vec![], vec![]);
-    let binding = fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let binding = fs::read_to_string(&path).map_err(|e| e.to_string())?;
     let mut lines = binding.lines().enumerate();
     while let Some((mut line_no, line)) = lines.next() {
         line_no += 1;
@@ -43,6 +44,13 @@ pub(crate) fn parse(path: String) -> Result<Vec<TestCase>, String> {
             let l = responses.len();
             responses[l - 1].ignore_paths.push(get_ignore_path(line)?);
         }
+        if line.starts_with(VARIABLE_PREFIX) {
+            if responses.is_empty() || responses.len() != requests.len() {
+                return Err(format!("misplaced variable at line {}: {}", line_no, line));
+            }
+            let (name, path) = get_variable_template(line)?;
+            responses.last_mut().unwrap().variables.insert(name, path); // unwrap
+        }
     }
     if requests.len() != responses.len() {
         return Err(format!(
@@ -59,6 +67,7 @@ pub(crate) fn parse(path: String) -> Result<Vec<TestCase>, String> {
             response: resp.clone(),
         })
         .collect::<Vec<TestCase>>();
+
     Ok(test_cases)
 }
 
@@ -84,6 +93,30 @@ fn get_ignore_path(s: &str) -> Result<String, String> {
     }
 
     Ok(path)
+}
+
+fn get_variable_template(s: &str) -> Result<(String, Path), String> {
+    let mut parts = s
+        .strip_prefix(VARIABLE_PREFIX)
+        .and_then(|s| s.strip_suffix("]"))
+        .map(|f| f.split("=").collect::<Vec<&str>>());
+
+    match parts {
+        Some(ref mut p) => {
+            if p.len() != 2 {
+                return Err(format!("Invalid variable template: {}", s));
+            }
+
+            let var_name = p[0].trim();
+            let response_path = p[1].trim();
+
+            match response_path.jsonpath() {
+                Ok(p) => return Ok((var_name.to_owned(), p)),
+                Err(e) => return Err(format!("Invalid variable template: {}: {}", s, e)),
+            }
+        }
+        None => return Err(format!("Invalid variable template: {}", s)),
+    }
 }
 
 fn get_request(code_block_line_no: usize, code: String) -> Result<Request, String> {
@@ -112,7 +145,7 @@ fn get_request(code_block_line_no: usize, code: String) -> Result<Request, Strin
     })
 }
 
-fn get_response(code_block_line_no: usize, code: String) -> Result<Response, String> {
+fn get_response<'a>(code_block_line_no: usize, code: String) -> Result<Response, String> {
     let mut lines = code.lines();
 
     // Parse HTTP method and URL
@@ -138,6 +171,7 @@ fn get_response(code_block_line_no: usize, code: String) -> Result<Response, Str
         ignore_paths: vec![],
         body,
         line_number: code_block_line_no,
+        variables: HashMap::new(),
     })
 }
 
