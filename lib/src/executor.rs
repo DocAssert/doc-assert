@@ -15,16 +15,7 @@ pub(crate) async fn execute(
     variables: &mut Variables,
 ) -> Result<(), String> {
     let mut test_request = test_case.request;
-
-    if let Some(mut body) = test_request.body.as_mut() {
-        variables.replace_placeholders(&mut body, false);
-    }
-
-    variables.replace_placeholders(&mut test_request.uri, true);
-
-    for (_, value) in test_request.headers.iter_mut() {
-        variables.replace_placeholders(value, true);
-    }
+    variables.replace_request_placeholders(&mut test_request)?;
 
     let test_request_line_number = test_request.line_number;
     let http_method = &test_request.http_method;
@@ -35,7 +26,9 @@ pub(crate) async fn execute(
             http_method, uri, test_request_line_number, err
         )
     })?;
-    let test_response = test_case.response;
+    let mut test_response = test_case.response;
+    variables.replace_response_placeholders(&mut test_response)?;
+
     let test_response_line_number = test_response.line_number;
 
     assert_response(response, test_response, variables)

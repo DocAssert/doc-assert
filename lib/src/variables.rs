@@ -2,7 +2,10 @@ use std::collections::HashMap;
 
 use serde_json::Value;
 
-use crate::json_diff::path::{Key, Path};
+use crate::{
+    domain::{Request, Response},
+    json_diff::path::{Key, Path},
+};
 
 #[derive(Debug, Clone)]
 pub struct Variables {
@@ -46,7 +49,7 @@ impl Variables {
         Ok(())
     }
 
-    pub(crate) fn replace_placeholders(&self, input: &mut String, trim_quotes: bool) {
+    fn replace_placeholders(&self, input: &mut String, trim_quotes: bool) -> Result<(), String> {
         for (name, value) in &self.map {
             let placeholder = format!("`{}`", name);
             let value_str = value.to_string();
@@ -59,6 +62,38 @@ impl Variables {
 
             *input = input.replace(&placeholder, value);
         }
+
+        if input.contains('`') {
+            return Err(format!("unresolved variable placeholders in {}", input));
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn replace_request_placeholders(&self, input: &mut Request) -> Result<(), String> {
+        self.replace_placeholders(&mut input.uri, true)?;
+
+        if let Some(body) = &mut input.body {
+            self.replace_placeholders(body, false)?;
+        }
+
+        for (_, value) in &mut input.headers.iter_mut() {
+            self.replace_placeholders(value, true)?;
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn replace_response_placeholders(&self, input: &mut Response) -> Result<(), String> {
+        if let Some(body) = &mut input.body {
+            self.replace_placeholders(body, false)?;
+        }
+
+        for (_, value) in &mut input.headers.iter_mut() {
+            self.replace_placeholders(value, true)?;
+        }
+
+        Ok(())
     }
 }
 

@@ -104,7 +104,7 @@ fn get_ignore_path(s: &str) -> Result<String, String> {
 
 fn get_variable_template(s: &str) -> Result<(String, Path), String> {
     let re =
-        Regex::new(format!(r"^\[let\s(?<var>\w+)\]:\s#\s(?<value>{JSON_PATH_REGEX})").as_str())
+        Regex::new(format!(r"^\[let\s(?<var>\w+)\]:\s#\s\((?<value>{JSON_PATH_REGEX})\)").as_str())
             .unwrap();
 
     let caps = re
@@ -244,5 +244,15 @@ mod tests {
             "{\"id\":1,\"name\":\"test\"}"
         );
         assert_eq!(test_cases[0].response.ignore_paths[0], "$.id".to_string());
+
+        assert_eq!(
+            test_cases[0]
+                .response
+                .variables
+                .get("name")
+                .unwrap()
+                .to_string(),
+            ".user.name".to_string()
+        );
     }
 }
