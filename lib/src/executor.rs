@@ -17,10 +17,14 @@ pub(crate) async fn execute(
     let mut test_request = test_case.request;
 
     if let Some(mut body) = test_request.body.as_mut() {
-        variables.replace_placeholders(&mut body);
+        variables.replace_placeholders(&mut body, false);
     }
 
-    variables.replace_placeholders(&mut test_request.uri);
+    variables.replace_placeholders(&mut test_request.uri, true);
+
+    for (_, value) in test_request.headers.iter_mut() {
+        variables.replace_placeholders(value, true);
+    }
 
     let test_request_line_number = test_request.line_number;
     let http_method = &test_request.http_method;
@@ -301,12 +305,6 @@ mod tests {
         let result: Result<(), String> =
             execute(server.url().as_str(), test_case, &mut variables).await;
 
-        match result {
-            Ok(_) => {}
-            Err(ref err) => {
-                println!("{}", err)
-            }
-        }
-        assert!(result.is_ok());
+        assert_eq!(Ok(()), result);
     }
 }

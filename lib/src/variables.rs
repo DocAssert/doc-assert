@@ -46,11 +46,18 @@ impl Variables {
         Ok(())
     }
 
-    pub(crate) fn replace_placeholders(&self, input: &mut String) {
+    pub(crate) fn replace_placeholders(&self, input: &mut String, trim_quotes: bool) {
         for (name, value) in &self.map {
             let placeholder = format!("`{}`", name);
+            let value_str = value.to_string();
 
-            *input = input.replace(&placeholder, value.to_string().as_str());
+            let value = if trim_quotes {
+                value_str.trim_matches('"')
+            } else {
+                value_str.as_str()
+            };
+
+            *input = input.replace(&placeholder, value);
         }
     }
 }

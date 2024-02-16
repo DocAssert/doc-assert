@@ -18,6 +18,9 @@ pub enum Key {
     Field(String),
 }
 
+pub(crate) const JSON_PATH_REGEX: &str = r"\$\.?(([a-zA-Z_][a-zA-Z0-9_]*)*(\[\d+\]|\[\d*:\d*\]|(\[\*\]))?)(\.((([a-zA-Z_][a-zA-Z0-9_]*)(\[\d+\]|\[\d*:\d*\]|(\[\*\]))?)|\*))*";
+const JSON_PATH_REGEX_FULL: &str = r"^\$\.?(([a-zA-Z_][a-zA-Z0-9_]*)*(\[\d+\]|\[\d*:\d*\]|(\[\*\]))?)(\.((([a-zA-Z_][a-zA-Z0-9_]*)(\[\d+\]|\[\d*:\d*\]|(\[\*\]))?)|\*))*$";
+
 // We cannot implement FromStr for Path because it would confict with timelines
 // https://stackoverflow.com/questions/28931515/how-do-i-implement-fromstr-with-a-concrete-lifetime
 pub trait JSONPath {
@@ -88,9 +91,7 @@ impl Path {
     }
 
     pub(crate) fn from_jsonpath(jsonpath: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        let re = Regex::new(
-            r"^\$\.?(([a-zA-Z_][a-zA-Z0-9_]*)*(\[\d+\]|\[\d*:\d*\]|(\[\*\]))?)(\.((([a-zA-Z_][a-zA-Z0-9_]*)(\[\d+\]|\[\d*:\d*\]|(\[\*\]))?)|\*))*$",
-        )?;
+        let re = Regex::new(JSON_PATH_REGEX_FULL)?;
 
         if !re.is_match(jsonpath) {
             return Err("invalid JSONPath".into());

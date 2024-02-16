@@ -4,7 +4,8 @@ use std::iter::Enumerate;
 use std::str::{FromStr, Lines};
 
 use crate::domain::{HttpMethod, Request, Response, TestCase};
-use crate::json_diff::path::{JSONPath, Path};
+use crate::json_diff::path::{JSONPath, Path, JSON_PATH_REGEX};
+use regex::Regex;
 
 const DOC_ASSERT_REQUEST: &str = "```docassertrequest";
 const DOC_ASSERT_RESPONSE: &str = "```docassertresponse";
@@ -27,6 +28,7 @@ pub(crate) fn parse<'a>(path: String) -> Result<Vec<TestCase>, String> {
             })?;
             requests.push(request);
         }
+
         if line.starts_with(DOC_ASSERT_RESPONSE) {
             let response = get_response(line_no, get_code(&mut lines)).map_err(|err| {
                 format!(
@@ -37,6 +39,7 @@ pub(crate) fn parse<'a>(path: String) -> Result<Vec<TestCase>, String> {
             })?;
             responses.push(response);
         }
+
         if line.starts_with(IGNORE_PREFIX) {
             if responses.is_empty() || responses.len() != requests.len() {
                 return Err(format!("misplaced ignore at line {}: {}", line_no, line));
@@ -44,12 +47,15 @@ pub(crate) fn parse<'a>(path: String) -> Result<Vec<TestCase>, String> {
             let l = responses.len();
             responses[l - 1].ignore_paths.push(get_ignore_path(line)?);
         }
+
         if line.starts_with(VARIABLE_PREFIX) {
             if responses.is_empty() || responses.len() != requests.len() {
                 return Err(format!("misplaced variable at line {}: {}", line_no, line));
             }
             let (name, path) = get_variable_template(line)?;
-            responses.last_mut().unwrap().variables.insert(name, path);
+
+            let l = responses.len();
+            responses[l - 1].variables.insert(name, path);
         }
     }
     if requests.len() != responses.len() {
@@ -59,6 +65,7 @@ pub(crate) fn parse<'a>(path: String) -> Result<Vec<TestCase>, String> {
             responses.len()
         ));
     }
+
     let test_cases = requests
         .iter()
         .zip(responses.iter())
@@ -96,26 +103,25 @@ fn get_ignore_path(s: &str) -> Result<String, String> {
 }
 
 fn get_variable_template(s: &str) -> Result<(String, Path), String> {
-    let mut parts = s
-        .strip_prefix(VARIABLE_PREFIX)
-        .and_then(|s| s.strip_suffix("]"))
-        .map(|f| f.split("=").collect::<Vec<&str>>());
+    let re =
+        Regex::new(format!(r"^\[let\s(?<var>\w+)\]:\s#\s(?<value>{JSON_PATH_REGEX})").as_str())
+            .unwrap();
 
-    match parts {
-        Some(ref mut p) => {
-            if p.len() != 2 {
-                return Err(format!("invalid variable template: {}", s));
-            }
+    let caps = re
+        .captures(s)
+        .ok_or(format!("invalid variable template: {}", s))?;
 
-            let var_name = p[0].trim();
-            let response_path = p[1].trim();
+    let name = caps
+        .name("var")
+        .ok_or(format!("invalid variable template: {}", s))?;
 
-            match response_path.jsonpath() {
-                Ok(p) => return Ok((var_name.to_owned(), p)),
-                Err(e) => return Err(format!("invalid variable template: {}: {}", s, e)),
-            }
-        }
-        None => return Err(format!("Invalid variable template: {}", s)),
+    let value = caps
+        .name("value")
+        .ok_or(format!("invalid variable template: {}", s))?;
+
+    match value.as_str().jsonpath() {
+        Ok(p) => return Ok((name.as_str().to_owned(), p)),
+        Err(e) => return Err(format!("invalid variable template: {}: {}", s, e)),
     }
 }
 
