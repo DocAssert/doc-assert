@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::fmt::Display;
 use std::str::FromStr;
 
+use crate::json_diff::path::Path;
+
 #[derive(Debug, Clone)]
 pub(crate) struct TestCase {
     pub request: Request,
@@ -59,4 +61,5 @@ pub(crate) struct Response {
     pub ignore_paths: Vec<String>,
     pub body: Option<String>,
     pub line_number: usize,
+    pub variables: HashMap<String, Path>,
 }

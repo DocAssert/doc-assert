@@ -32,13 +32,13 @@ pub(crate) enum NumericMode {
 /// Configuration for how JSON values should be compared.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(missing_copy_implementations)]
-pub(crate) struct Config<'a> {
+pub(crate) struct Config {
     pub(crate) compare_mode: CompareMode,
     pub(crate) numeric_mode: NumericMode,
-    pub(crate) ignore_paths: Vec<Path<'a>>,
+    pub(crate) ignore_paths: Vec<Path>,
 }
 
-impl<'a> Config<'a> {
+impl Config {
     /// Create a new [`Config`] using the given [`CompareMode`].
     ///
     /// The default `numeric_mode` is be [`NumericMode::Strict`].
@@ -65,13 +65,13 @@ impl<'a> Config<'a> {
     }
 
     /// Add a path to the list of paths to ignore.
-    pub fn ignore_path(mut self, path: Path<'a>) -> Self {
+    pub fn ignore_path(mut self, path: Path) -> Self {
         self.ignore_paths.push(path);
         self
     }
 
     /// Checks if the given path should be ignored.
-    pub fn to_ignore(&self, path: &Path<'a>) -> bool {
+    pub fn to_ignore(&self, path: &Path) -> bool {
         self.ignore_paths.iter().any(|p| p.prefixes(path))
     }
 }
@@ -79,7 +79,7 @@ impl<'a> Config<'a> {
 pub(crate) fn diff<'a>(
     expected: &'a Value,
     actual: &'a Value,
-    config: Config<'a>,
+    config: Config,
 ) -> Vec<Difference<'a>> {
     let mut acc = vec![];
     diff_with(expected, actual, config, Path::Root, &mut acc);
@@ -89,8 +89,8 @@ pub(crate) fn diff<'a>(
 fn diff_with<'a>(
     expected: &'a Value,
     actual: &'a Value,
-    config: Config<'a>,
-    path: Path<'a>,
+    config: Config,
+    path: Path,
     acc: &mut Vec<Difference<'a>>,
 ) {
     let mut folder = DiffFolder {
@@ -106,9 +106,9 @@ fn diff_with<'a>(
 #[derive(Debug)]
 struct DiffFolder<'a, 'b> {
     actual: &'a Value,
-    path: Path<'a>,
+    path: Path,
     acc: &'b mut Vec<Difference<'a>>,
-    config: Config<'a>,
+    config: Config,
 }
 
 macro_rules! direct_compare {
@@ -245,7 +245,7 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
             match self.config.compare_mode {
                 CompareMode::Inclusive => {
                     for (key, actual) in actual.iter() {
-                        let path = self.path.append(Key::Field(key));
+                        let path = self.path.append(Key::Field(key.clone()));
 
                         if let Some(expected) = expected.get(key) {
                             diff_with(expected, actual, self.config.clone(), path, self.acc)
@@ -266,7 +266,7 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
                 CompareMode::Strict => {
                     let all_keys = actual.keys().chain(expected.keys()).collect::<HashSet<_>>();
                     for key in all_keys {
-                        let path = self.path.append(Key::Field(key));
+                        let path = self.path.append(Key::Field(key.clone()));
 
                         match (expected.get(key), actual.get(key)) {
                             (Some(expected), Some(actual)) => {
@@ -320,10 +320,10 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
 
 #[derive(Debug, PartialEq)]
 pub(crate) struct Difference<'a> {
-    path: Path<'a>,
+    path: Path,
     expected: Option<&'a Value>,
     actual: Option<&'a Value>,
-    config: Config<'a>,
+    config: Config,
 }
 
 impl<'a> fmt::Display for Difference<'a> {

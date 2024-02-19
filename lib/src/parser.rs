@@ -4,15 +4,17 @@ use std::iter::Enumerate;
 use std::str::{FromStr, Lines};
 
 use crate::domain::{HttpMethod, Request, Response, TestCase};
-use crate::json_diff::path::JSONPath;
+use crate::json_diff::path::{JSONPath, Path, JSON_PATH_REGEX};
+use regex::Regex;
 
 const DOC_ASSERT_REQUEST: &str = "```docassertrequest";
 const DOC_ASSERT_RESPONSE: &str = "```docassertresponse";
 const IGNORE_PREFIX: &str = "[ignore]";
+const VARIABLE_PREFIX: &str = "[let ";
 
-pub(crate) fn parse(path: String) -> Result<Vec<TestCase>, String> {
+pub(crate) fn parse<'a>(path: String) -> Result<Vec<TestCase>, String> {
     let (mut requests, mut responses) = (vec![], vec![]);
-    let binding = fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let binding = fs::read_to_string(&path).map_err(|e| e.to_string())?;
     let mut lines = binding.lines().enumerate();
     while let Some((mut line_no, line)) = lines.next() {
         line_no += 1;
@@ -26,6 +28,7 @@ pub(crate) fn parse(path: String) -> Result<Vec<TestCase>, String> {
             })?;
             requests.push(request);
         }
+
         if line.starts_with(DOC_ASSERT_RESPONSE) {
             let response = get_response(line_no, get_code(&mut lines)).map_err(|err| {
                 format!(
@@ -36,12 +39,23 @@ pub(crate) fn parse(path: String) -> Result<Vec<TestCase>, String> {
             })?;
             responses.push(response);
         }
+
         if line.starts_with(IGNORE_PREFIX) {
             if responses.is_empty() || responses.len() != requests.len() {
                 return Err(format!("misplaced ignore at line {}: {}", line_no, line));
             }
             let l = responses.len();
             responses[l - 1].ignore_paths.push(get_ignore_path(line)?);
+        }
+
+        if line.starts_with(VARIABLE_PREFIX) {
+            if responses.is_empty() || responses.len() != requests.len() {
+                return Err(format!("misplaced variable at line {}: {}", line_no, line));
+            }
+            let (name, path) = get_variable_template(line)?;
+
+            let l = responses.len();
+            responses[l - 1].variables.insert(name, path);
         }
     }
     if requests.len() != responses.len() {
@@ -51,6 +65,7 @@ pub(crate) fn parse(path: String) -> Result<Vec<TestCase>, String> {
             responses.len()
         ));
     }
+
     let test_cases = requests
         .iter()
         .zip(responses.iter())
@@ -59,6 +74,7 @@ pub(crate) fn parse(path: String) -> Result<Vec<TestCase>, String> {
             response: resp.clone(),
         })
         .collect::<Vec<TestCase>>();
+
     Ok(test_cases)
 }
 
@@ -80,10 +96,33 @@ fn get_ignore_path(s: &str) -> Result<String, String> {
     path.pop();
 
     if let Err(e) = path.jsonpath() {
-        return Err(format!("Invalid ignore path {}", e));
+        return Err(format!("invalid ignore path {}", e));
     }
 
     Ok(path)
+}
+
+fn get_variable_template(s: &str) -> Result<(String, Path), String> {
+    let re =
+        Regex::new(format!(r"^\[let\s(?<var>\w+)\]:\s#\s\((?<value>{JSON_PATH_REGEX})\)").as_str())
+            .unwrap();
+
+    let caps = re
+        .captures(s)
+        .ok_or(format!("invalid variable template: {}", s))?;
+
+    let name = caps
+        .name("var")
+        .ok_or(format!("invalid variable template: {}", s))?;
+
+    let value = caps
+        .name("value")
+        .ok_or(format!("invalid variable template: {}", s))?;
+
+    match value.as_str().jsonpath() {
+        Ok(p) => return Ok((name.as_str().to_owned(), p)),
+        Err(e) => return Err(format!("invalid variable template: {}: {}", s, e)),
+    }
 }
 
 fn get_request(code_block_line_no: usize, code: String) -> Result<Request, String> {
@@ -112,7 +151,7 @@ fn get_request(code_block_line_no: usize, code: String) -> Result<Request, Strin
     })
 }
 
-fn get_response(code_block_line_no: usize, code: String) -> Result<Response, String> {
+fn get_response<'a>(code_block_line_no: usize, code: String) -> Result<Response, String> {
     let mut lines = code.lines();
 
     // Parse HTTP method and URL
@@ -138,6 +177,7 @@ fn get_response(code_block_line_no: usize, code: String) -> Result<Response, Str
         ignore_paths: vec![],
         body,
         line_number: code_block_line_no,
+        variables: HashMap::new(),
     })
 }
 
@@ -204,5 +244,15 @@ mod tests {
             "{\"id\":1,\"name\":\"test\"}"
         );
         assert_eq!(test_cases[0].response.ignore_paths[0], "$.id".to_string());
+
+        assert_eq!(
+            test_cases[0]
+                .response
+                .variables
+                .get("name")
+                .unwrap()
+                .to_string(),
+            ".user.name".to_string()
+        );
     }
 }

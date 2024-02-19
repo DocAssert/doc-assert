@@ -7,9 +7,16 @@ use reqwest::{Body, Client, Method, Response};
 use crate::domain::{HttpMethod, Request, TestCase};
 use crate::json_diff::path::Path;
 use crate::json_diff::{diff, CompareMode, Config};
+use crate::variables::Variables;
 
-pub(crate) async fn execute(base_url: &str, test_case: TestCase) -> Result<(), String> {
-    let test_request = test_case.request;
+pub(crate) async fn execute(
+    base_url: &str,
+    test_case: TestCase,
+    variables: &mut Variables,
+) -> Result<(), String> {
+    let mut test_request = test_case.request;
+    variables.replace_request_placeholders(&mut test_request)?;
+
     let test_request_line_number = test_request.line_number;
     let http_method = &test_request.http_method;
     let uri = &test_request.uri;
@@ -19,9 +26,12 @@ pub(crate) async fn execute(base_url: &str, test_case: TestCase) -> Result<(), S
             http_method, uri, test_request_line_number, err
         )
     })?;
-    let test_response = test_case.response;
+    let mut test_response = test_case.response;
+    variables.replace_response_placeholders(&mut test_response)?;
+
     let test_response_line_number = test_response.line_number;
-    assert_response(response, test_response)
+
+    assert_response(response, test_response, variables)
         .await
         .map_err(|err| {
             format!(
@@ -34,6 +44,7 @@ pub(crate) async fn execute(base_url: &str, test_case: TestCase) -> Result<(), S
 async fn assert_response(
     response: Response,
     test_response: crate::domain::Response,
+    variables: &mut Variables,
 ) -> Result<(), String> {
     if test_response.code != response.status().as_u16() {
         return Err(format!(
@@ -86,6 +97,10 @@ async fn assert_response(
                     .join(", "),
             ));
         }
+
+        if test_response.variables.len() > 0 {
+            variables.obtain_from_response(actual, &test_response.variables)?;
+        }
     }
     Ok(())
 }
@@ -125,15 +140,23 @@ fn map_method(http_method: &HttpMethod) -> Method {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+    use std::fmt::format;
+
+    use serde_json::{json, ser};
+
     use crate::domain::{HttpMethod, Request, Response, TestCase};
     use crate::executor::execute;
+    use crate::json_diff::path::JSONPath;
+    use crate::variables::{self, Variables};
 
     #[tokio::test]
     async fn test_execute() {
         let users_endpoint = "/users";
         let header_name = "Content-Type";
         let header_value = "application/json";
-        let request_body = "{\"name\":\"test\"}";
+        let request_body = "{\"name\":\"John\"}";
+        let request_body_template = "{\"name\":`name`}";
         let response_body = "{\"id\": 1, \"name\": \"John\"}";
         let response_status = 201;
         let mut server = mockito::Server::new();
@@ -155,7 +178,7 @@ mod tests {
                     .into_iter()
                     .collect(),
                 uri: users_endpoint.to_string(),
-                body: Some(request_body.to_string()),
+                body: Some(request_body_template.to_string()),
                 line_number: 1,
             },
             response: Response {
@@ -166,9 +189,14 @@ mod tests {
                 ignore_paths: vec!["$.id".to_string()],
                 body: Some(response_body.to_string()),
                 line_number: 2,
+                variables: HashMap::new(),
             },
         };
-        let result = execute(server.url().as_str(), test_case).await;
+
+        let mut variables = Variables::from_json(&json!({"name":"John"})).unwrap();
+
+        let result = execute(server.url().as_str(), test_case, &mut variables).await;
+
         match result {
             Ok(_) => {}
             Err(ref err) => {
@@ -176,5 +204,100 @@ mod tests {
             }
         }
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_execute_chained() {
+        let users_endpoint = "/users";
+        let header_name = "Content-Type";
+        let header_value = "application/json";
+        let request_body = "{\"name\":\"John\"}";
+        let request_body_template = "{\"name\":`name`}";
+        let response_body = "{\"id\": 1, \"name\": \"John\"}";
+        let response_status = 201;
+        let mut server = mockito::Server::new();
+        server
+            .mock("POST", users_endpoint)
+            .match_header(header_name, header_value)
+            .match_body(mockito::Matcher::PartialJsonString(
+                request_body.to_string(),
+            ))
+            .with_header(header_name, header_value)
+            .with_status(response_status)
+            .with_body(response_body)
+            .create();
+
+        server
+            .mock("GET", "/users/1")
+            .match_header(header_name, header_value)
+            .with_header(header_name, header_value)
+            .with_status(200)
+            .with_body(response_body)
+            .create();
+
+        let mut response_variables = HashMap::new();
+        response_variables.insert("id".to_string(), "$.id".jsonpath().unwrap());
+
+        let test_case = TestCase {
+            request: Request {
+                http_method: HttpMethod::Post,
+                headers: vec![(header_name.to_string(), header_value.to_string())]
+                    .into_iter()
+                    .collect(),
+                uri: users_endpoint.to_string(),
+                body: Some(request_body_template.to_string()),
+                line_number: 1,
+            },
+            response: Response {
+                code: response_status as u16,
+                headers: vec![(header_name.to_string(), header_value.to_string())]
+                    .into_iter()
+                    .collect(),
+                ignore_paths: vec!["$.id".to_string()],
+                body: Some(response_body.to_string()),
+                line_number: 2,
+                variables: response_variables,
+            },
+        };
+
+        let mut variables = Variables::from_json(&json!({"name":"John"})).unwrap();
+
+        let result: Result<(), String> =
+            execute(server.url().as_str(), test_case, &mut variables).await;
+
+        match result {
+            Ok(_) => {}
+            Err(ref err) => {
+                println!("{}", err)
+            }
+        }
+        assert!(result.is_ok());
+
+        let test_case = TestCase {
+            request: Request {
+                http_method: HttpMethod::Get,
+                headers: vec![(header_name.to_string(), header_value.to_string())]
+                    .into_iter()
+                    .collect(),
+                uri: format!("{}/`id`", users_endpoint),
+                body: None,
+                line_number: 3,
+            },
+            response: Response {
+                code: 200,
+                headers: vec![(header_name.to_string(), header_value.to_string())]
+                    .into_iter()
+                    .collect(),
+                ignore_paths: vec![],
+                body: Some(response_body.to_string()),
+                line_number: 4,
+                variables: HashMap::new(),
+            },
+        };
+
+        let result: Result<(), String> =
+            execute(server.url().as_str(), test_case, &mut variables).await;
+
+        assert_eq!(Ok(()), result);
     }
 }
