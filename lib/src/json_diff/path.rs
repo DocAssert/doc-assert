@@ -78,12 +78,12 @@ impl Path {
                         }
 
                         match (expected, actual) {
-                            (Key::Wildcard, Key::Field(_)) => return true,
-                            (Key::WildcardArray, Key::Idx(_)) => return true,
-                            (Key::IdxRange(a, b), Key::Idx(c)) => return a <= c && c < b,
-                            (Key::IdxRangeStart(a), Key::Idx(b)) => return a <= b,
-                            (Key::IdxRangeEnd(a), Key::Idx(b)) => return b < a,
-                            _ => return false,
+                            (Key::Wildcard, Key::Field(_)) => true,
+                            (Key::WildcardArray, Key::Idx(_)) => true,
+                            (Key::IdxRange(a, b), Key::Idx(c)) => a <= c && c < b,
+                            (Key::IdxRangeStart(a), Key::Idx(b)) => a <= b,
+                            (Key::IdxRangeEnd(a), Key::Idx(b)) => b < a,
+                            _ => false,
                         }
                     })
             }
@@ -130,12 +130,12 @@ impl Path {
             }
         }
 
-        if token.ends_with(":") {
+        if token.ends_with(':') {
             let start: usize = token.trim_end_matches(':').parse()?;
             return Ok(Key::IdxRangeStart(start));
         }
 
-        if token.starts_with(":") {
+        if token.starts_with(':') {
             let end: usize = token.trim_start_matches(':').parse()?;
             return Ok(Key::IdxRangeEnd(end));
         }

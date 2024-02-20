@@ -20,8 +20,28 @@ Content-Type: application/json
 }
 ```
 [ignore]: # ($.id)
-[let name]: # ($.user.name)
+[let name]: # ($lo.name)
 
+This request creates user
+```docassertrequest
+POST /api/user
+Content-Type: application/json
+{
+    "name": "test"
+}
+```
+And as a response we should get something like this
+
+TODO: figure out how to ignore id which can be random
+
+```docassertresponse
+HTTP 201
+Content-Type: application/json
+{
+    "id": 1,
+    "name": "tes1t"
+}
+```
 
 ## Unrelated
 Some other unrelated code which should not be parsed
