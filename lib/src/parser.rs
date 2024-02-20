@@ -1,20 +1,34 @@
+// Copyright 2024 The DocAssert Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use std::collections::HashMap;
 use std::fs;
 use std::iter::Enumerate;
 use std::str::{FromStr, Lines};
 
+use regex::Regex;
+
 use crate::domain::{HttpMethod, Request, Response, TestCase};
 use crate::json_diff::path::{JSONPath, Path, JSON_PATH_REGEX};
-use regex::Regex;
 
 const DOC_ASSERT_REQUEST: &str = "```docassertrequest";
 const DOC_ASSERT_RESPONSE: &str = "```docassertresponse";
 const IGNORE_PREFIX: &str = "[ignore]";
 const VARIABLE_PREFIX: &str = "[let ";
 
-pub(crate) fn parse<'a>(path: String) -> Result<Vec<TestCase>, String> {
+pub(crate) fn parse(path: String) -> Result<Vec<TestCase>, String> {
     let (mut requests, mut responses) = (vec![], vec![]);
-    let binding = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let binding = fs::read_to_string(path).map_err(|e| e.to_string())?;
     let mut lines = binding.lines().enumerate();
     while let Some((mut line_no, line)) = lines.next() {
         line_no += 1;
@@ -22,8 +36,7 @@ pub(crate) fn parse<'a>(path: String) -> Result<Vec<TestCase>, String> {
             let request = get_request(line_no, get_code(&mut lines)).map_err(|err| {
                 format!(
                     "parsing error of a request code block starting at line {}: {}",
-                    line_no,
-                    err.to_string()
+                    line_no, err
                 )
             })?;
             requests.push(request);
@@ -33,8 +46,7 @@ pub(crate) fn parse<'a>(path: String) -> Result<Vec<TestCase>, String> {
             let response = get_response(line_no, get_code(&mut lines)).map_err(|err| {
                 format!(
                     "parsing error of a response code block starting at line {}: {}",
-                    line_no,
-                    err.to_string()
+                    line_no, err
                 )
             })?;
             responses.push(response);
@@ -120,8 +132,8 @@ fn get_variable_template(s: &str) -> Result<(String, Path), String> {
         .ok_or(format!("invalid variable template: {}", s))?;
 
     match value.as_str().jsonpath() {
-        Ok(p) => return Ok((name.as_str().to_owned(), p)),
-        Err(e) => return Err(format!("invalid variable template: {}: {}", s, e)),
+        Ok(p) => Ok((name.as_str().to_owned(), p)),
+        Err(e) => Err(format!("invalid variable template: {}: {}", s, e)),
     }
 }
 
@@ -151,7 +163,7 @@ fn get_request(code_block_line_no: usize, code: String) -> Result<Request, Strin
     })
 }
 
-fn get_response<'a>(code_block_line_no: usize, code: String) -> Result<Response, String> {
+fn get_response(code_block_line_no: usize, code: String) -> Result<Response, String> {
     let mut lines = code.lines();
 
     // Parse HTTP method and URL
@@ -218,7 +230,7 @@ mod tests {
         let result = parse("README.md".to_string());
         assert!(result.is_ok());
         let test_cases = result.unwrap();
-        assert_eq!(test_cases.len(), 1);
+        assert_eq!(test_cases.len(), 2);
         // request
         assert_eq!(
             test_cases[0].request.http_method,
@@ -252,7 +264,7 @@ mod tests {
                 .get("name")
                 .unwrap()
                 .to_string(),
-            ".user.name".to_string()
+            ".name".to_string()
         );
     }
 }

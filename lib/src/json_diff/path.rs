@@ -1,3 +1,16 @@
+// Copyright 2024 The DocAssert Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use regex::Regex;
 use std::fmt;
 
@@ -78,12 +91,12 @@ impl Path {
                         }
 
                         match (expected, actual) {
-                            (Key::Wildcard, Key::Field(_)) => return true,
-                            (Key::WildcardArray, Key::Idx(_)) => return true,
-                            (Key::IdxRange(a, b), Key::Idx(c)) => return a <= c && c < b,
-                            (Key::IdxRangeStart(a), Key::Idx(b)) => return a <= b,
-                            (Key::IdxRangeEnd(a), Key::Idx(b)) => return b < a,
-                            _ => return false,
+                            (Key::Wildcard, Key::Field(_)) => true,
+                            (Key::WildcardArray, Key::Idx(_)) => true,
+                            (Key::IdxRange(a, b), Key::Idx(c)) => a <= c && c < b,
+                            (Key::IdxRangeStart(a), Key::Idx(b)) => a <= b,
+                            (Key::IdxRangeEnd(a), Key::Idx(b)) => b < a,
+                            _ => false,
                         }
                     })
             }
@@ -130,12 +143,12 @@ impl Path {
             }
         }
 
-        if token.ends_with(":") {
+        if token.ends_with(':') {
             let start: usize = token.trim_end_matches(':').parse()?;
             return Ok(Key::IdxRangeStart(start));
         }
 
-        if token.starts_with(":") {
+        if token.starts_with(':') {
             let end: usize = token.trim_start_matches(':').parse()?;
             return Ok(Key::IdxRangeEnd(end));
         }

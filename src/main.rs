@@ -1,26 +1,40 @@
-use clap::Parser;
-use doc_assert::variables::Variables;
-use doc_assert::DocAssert;
+// Copyright 2024 The DocAssert Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use std::convert::From;
 use std::path::PathBuf;
 use std::str::FromStr;
 
+use clap::Parser;
 use serde_json::Value;
-use std::io::Write;
+
+use doc_assert::variables::Variables;
+use doc_assert::AssertionError;
+use doc_assert::DocAssert;
 
 #[macro_export]
 macro_rules! write_to_file {
     ($writer:expr, $msg:expr) => {
         if let Err(err) = writeln!($writer, $msg) {
             eprintln!("Error: {}", err);
-            std::process::exit(Code::INTERAL_ERROR);
+            std::process::exit(Code::INTERNAL_ERROR);
         }
     };
 
     ($writer:expr, $msg:expr, $($arg:tt)*) => {
         if let Err(err) = writeln!($writer, $msg, $($arg)*) {
             eprintln!("Error: {}", err);
-            std::process::exit(Code::INTERAL_ERROR);
+            std::process::exit(Code::INTERNAL_ERROR);
         }
     };
 }
@@ -39,13 +53,13 @@ impl FromStr for JSONVars {
 
 #[macro_export]
 macro_rules! handle_error {
-    ($writer:expr, $code:expr, $msg:expr, $($arg:tt)*) => {
-        write_to_file!($writer, $msg, $($arg)*);
+    ($code:expr, $msg:expr, $($arg:tt)*) => {
+        println!($msg, $($arg)*);
         std::process::exit($code);
     };
 
-    ($writer:expr, $code:expr, $msg:expr) => {
-        write_to_file!($writer, $msg);
+    ($code:expr, $msg:expr) => {
+        println!($msg);
         std::process::exit($code);
     };
 }
@@ -54,9 +68,10 @@ struct Code;
 
 impl Code {
     const SUCCESS: i32 = 0;
-    const INTERAL_ERROR: i32 = 1;
+    const INTERNAL_ERROR: i32 = 1;
     const INVALID_ARGUMENT: i32 = 2;
-    const DOC_VALIDATION_ERROR: i32 = 3;
+    const DOC_PARSING_ERROR: i32 = 3;
+    const DOC_ASSERTION_ERROR: i32 = 4;
 }
 
 #[derive(Debug, Parser)]
@@ -72,23 +87,16 @@ struct Cli {
     /// Variables to be used in the assertions in the JSON object format
     #[clap(short, long)]
     variables: Option<JSONVars>,
-
-    /// Output file (optional, default to stdout)
-    #[clap(short, long)]
-    output: Option<PathBuf>,
 }
 
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
 
-    let mut writter = Box::new(std::io::stdout()) as Box<dyn Write>;
-
     match &cli.variables {
         Some(vars) => {
             if let Value::String(_) = vars.0 {
                 handle_error!(
-                    writter,
                     Code::INVALID_ARGUMENT,
                     "Error: Variables must be a JSON object"
                 );
@@ -101,7 +109,7 @@ async fn main() {
         Some(vars) => match Variables::from_json(&vars.0) {
             Ok(vars) => vars,
             Err(e) => {
-                handle_error!(writter, Code::INVALID_ARGUMENT, "Error: {}", e);
+                handle_error!(Code::INVALID_ARGUMENT, "Error: {}", e);
             }
         },
         None => Variables::new(),
@@ -113,7 +121,7 @@ async fn main() {
 
     for file in cli.files.iter() {
         let Some(file) = file.to_str() else {
-            handle_error!(writter, Code::INVALID_ARGUMENT, "error: Invalid file path");
+            handle_error!(Code::INVALID_ARGUMENT, "error: Invalid file path");
         };
 
         doc_assert = doc_assert.with_doc_path(file);
@@ -121,16 +129,18 @@ async fn main() {
 
     let result = doc_assert.assert().await;
 
-    if let Err(errors) = result {
-        for error in errors {
-            if let Err(err) = writeln!(writter, "{}", error) {
-                eprintln!("{}", err);
-                std::process::exit(Code::INTERAL_ERROR);
-            }
+    match result {
+        Ok(report) => {
+            println!("{}", report);
+            std::process::exit(Code::SUCCESS);
         }
-        std::process::exit(Code::DOC_VALIDATION_ERROR);
+        Err(err) => match err {
+            AssertionError::ParsingError(err) => {
+                handle_error!(Code::DOC_PARSING_ERROR, "Error parsing file: {}", err);
+            }
+            AssertionError::TestSuiteError(report) => {
+                handle_error!(Code::DOC_ASSERTION_ERROR, "{}", report);
+            }
+        },
     }
-
-    write_to_file!(writter, "All files are OK");
-    std::process::exit(Code::SUCCESS);
 }
