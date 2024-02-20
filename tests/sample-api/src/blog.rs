@@ -1,9 +1,21 @@
+// Copyright 2024 The DocAssert Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use std::collections::HashMap;
 
-use crate::domain::{BlogPost, BlogMap, AllBlogs};
-use rocket::serde::json::{Json, Value, json};
+use crate::domain::{AllBlogs, BlogMap, BlogPost};
+use rocket::serde::json::{json, Json, Value};
 use rocket::serde::uuid::Uuid;
-
 
 #[post("/", format = "json", data = "<blog>")]
 async fn create(blog: Json<BlogPost>, list: AllBlogs<'_>) -> Json<BlogPost> {
@@ -23,7 +35,7 @@ async fn create(blog: Json<BlogPost>, list: AllBlogs<'_>) -> Json<BlogPost> {
 #[put("/<id>", format = "json", data = "<blog>")]
 async fn update(id: Uuid, blog: Json<BlogPost>, list: AllBlogs<'_>) -> Option<Json<BlogPost>> {
     let mut blogs = list.lock().await;
-    
+
     if let Some(saved_blog) = blogs.get_mut(&id) {
         saved_blog.title = blog.title.clone();
         saved_blog.body = blog.body.clone();
@@ -63,7 +75,8 @@ fn not_found() -> Value {
 
 pub fn stage() -> rocket::fairing::AdHoc {
     rocket::fairing::AdHoc::on_ignite("blog", |rocket| async {
-        rocket.mount("/blog", routes![create, update, get, all, delete])
+        rocket
+            .mount("/blog", routes![create, update, get, all, delete])
             .register("/blog", catchers![not_found])
             .manage(BlogMap::new(HashMap::new()))
     })

@@ -1,10 +1,26 @@
+// Copyright 2024 The DocAssert Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use crate::domain::{AllBlogs, BlogPost, Comment};
 use rocket::serde::json::Json;
-use crate::domain::{BlogPost, AllBlogs, Comment};
 use rocket::serde::uuid::Uuid;
 
-
 #[post("/<blog_id>/comment", format = "json", data = "<comment>")]
-async fn create(blog_id: Uuid, comment: Json<Comment>, state: AllBlogs<'_>) -> Option<Json<BlogPost>> {
+async fn create(
+    blog_id: Uuid,
+    comment: Json<Comment>,
+    state: AllBlogs<'_>,
+) -> Option<Json<BlogPost>> {
     let mut blogs = state.lock().await;
     if let Some(saved_blog) = blogs.get_mut(&blog_id) {
         let mut comment = comment.into_inner();
@@ -22,8 +38,8 @@ async fn create(blog_id: Uuid, comment: Json<Comment>, state: AllBlogs<'_>) -> O
                 let mut comments = comments.clone();
                 comments.push(comment.clone());
                 Some(comments)
-            },
-            None => Some(vec![comment.clone()])
+            }
+            None => Some(vec![comment.clone()]),
         };
 
         Some(Json(saved_blog.clone()))
@@ -33,7 +49,12 @@ async fn create(blog_id: Uuid, comment: Json<Comment>, state: AllBlogs<'_>) -> O
 }
 
 #[put("/<blog_id>/comment/<comment_id>", format = "json", data = "<comment>")]
-async fn update(blog_id: Uuid, comment_id: Uuid, comment: Json<Comment>, state: AllBlogs<'_>) -> Option<Json<BlogPost>> {
+async fn update(
+    blog_id: Uuid,
+    comment_id: Uuid,
+    comment: Json<Comment>,
+    state: AllBlogs<'_>,
+) -> Option<Json<BlogPost>> {
     let mut blogs = state.lock().await;
     if let Some(saved_blog) = blogs.get_mut(&blog_id) {
         if let Some(comments) = &mut saved_blog.comments {

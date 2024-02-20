@@ -20,7 +20,7 @@ Content-Type: application/json
 }
 ```
 [ignore]: # ($.id)
-[let name]: # ($lo.name)
+[let name]: # ($.name)
 
 This request creates user
 ```docassertrequest
@@ -39,7 +39,7 @@ HTTP 201
 Content-Type: application/json
 {
     "id": 1,
-    "name": "tes1t"
+    "name": "tes1t abc"
 }
 ```
 
