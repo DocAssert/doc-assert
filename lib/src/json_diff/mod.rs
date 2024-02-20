@@ -332,7 +332,7 @@ impl<'a> fmt::Display for Difference<'a> {
 
         match (&self.config.compare_mode, &self.expected, &self.actual) {
             (CompareMode::Inclusive, Some(expected), Some(actual)) => {
-                writeln!(f, "\njson atoms at path \"{}\" are not equal:", self.path)?;
+                writeln!(f, "json atoms at path \"{}\" are not equal:", self.path)?;
                 writeln!(f, "    actual:")?;
                 writeln!(f, "{}", json_to_string(actual).indent(8))?;
                 writeln!(f, "    expected:")?;
@@ -351,7 +351,7 @@ impl<'a> fmt::Display for Difference<'a> {
             (CompareMode::Inclusive, None, None) => unreachable!("can't both be missing"),
 
             (CompareMode::Strict, Some(expected), Some(actual)) => {
-                writeln!(f, "\njson atoms at path \"{}\" are not equal:", self.path)?;
+                writeln!(f, "json atoms at path \"{}\" are not equal:", self.path)?;
                 writeln!(f, "    actual:")?;
                 writeln!(f, "{}", json_to_string(expected).indent(8))?;
                 writeln!(f, "    expected:")?;

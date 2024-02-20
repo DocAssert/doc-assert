@@ -1,3 +1,11 @@
+## FUNCTIONAL TEST 1
+### Remark: This test is checking 'let id' that value changes across tests
+1) Create blog at POST /blog
+2) Delete blog at DELETE /blog/>blogID<
+3) Create new blog at POST /blog
+4) Delete newly created blog at DELETE /blog/>blogID<
+
+
 This request creates blog without comment
 ```docassertrequest
 POST /blog
@@ -26,7 +34,7 @@ Content-Type: application/json
 
 
 
-This request creates deletes blog with given id
+This request deletes blog with given id
 ```docassertrequest
 DELETE /blog/`id`
 Content-Type: application/json

@@ -1,3 +1,11 @@
+## FUNCTIONAL TEST 2
+### Remark: This test is checking update operation behavior
+1) Create blog at POST /blog
+2) Update  blog at PUT /blog/>blogID<
+3) Get all (1) blogs at GET /blog
+4) Delete blog at DELETE /blog/>blogID<
+
+
 This request creates blog without comment
 ```docassertrequest
 POST /blog
