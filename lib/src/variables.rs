@@ -97,6 +97,12 @@ impl Variables {
     }
 }
 
+impl Default for Variables {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 fn extract_value(path: &Path, value: &Value) -> Option<Value> {
     match path {
         Path::Root => None,

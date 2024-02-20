@@ -73,19 +73,14 @@ async fn assert_response(
         for path in test_response.ignore_paths.iter() {
             diff_config = diff_config.ignore_path(
                 Path::from_jsonpath(path.as_str())
-                    .map_err(|err| format!("invalid path {}", path,))?,
+                    .map_err(|err| format!("invalid path {}: {}", path, err))?,
             );
         }
         let response_body = response.text().await.map_err(|e| e.to_string())?;
-        let actual =
-            &serde_json::from_str::<serde_json::Value>(response_body.as_str()).map_err(|err| {
-                format!(
-                    "error parsing JSON response from the server: {}",
-                    test_response.line_number,
-                )
-            })?;
+        let actual = &serde_json::from_str::<serde_json::Value>(response_body.as_str())
+            .map_err(|err| format!("error parsing JSON response from the server: {}", err))?;
         let expected = &serde_json::from_str::<serde_json::Value>(test_body.as_str())
-            .map_err(|err| format!("error parsing JSON: {}", err.to_string()))?;
+            .map_err(|err| format!("error parsing JSON: {}", err))?;
         let diff_result = diff(actual, expected, diff_config);
         if !diff_result.is_empty() {
             return Err(format!(
@@ -94,11 +89,11 @@ async fn assert_response(
                     .iter()
                     .map(|d| d.to_string())
                     .collect::<Vec<String>>()
-                    .join(", "),
+                    .join("\n"),
             ));
         }
 
-        if test_response.variables.len() > 0 {
+        if !test_response.variables.is_empty() {
             variables.obtain_from_response(actual, &test_response.variables)?;
         }
     }
@@ -141,9 +136,8 @@ fn map_method(http_method: &HttpMethod) -> Method {
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
-    use std::fmt::format;
 
-    use serde_json::{json, ser};
+    use serde_json::json;
 
     use crate::domain::{HttpMethod, Request, Response, TestCase};
     use crate::executor::execute;
@@ -199,9 +193,7 @@ mod tests {
 
         match result {
             Ok(_) => {}
-            Err(ref err) => {
-                println!("{}", err)
-            }
+            Err(ref err) => assert_eq!("", err),
         }
         assert!(result.is_ok());
     }
@@ -267,9 +259,7 @@ mod tests {
 
         match result {
             Ok(_) => {}
-            Err(ref err) => {
-                println!("{}", err)
-            }
+            Err(ref err) => assert_eq!("", err),
         }
         assert!(result.is_ok());
 
