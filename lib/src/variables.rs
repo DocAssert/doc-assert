@@ -7,7 +7,7 @@ use crate::{
     json_diff::path::{Key, Path},
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Variables {
     pub map: HashMap<String, Value>,
 }
@@ -94,12 +94,6 @@ impl Variables {
         }
 
         Ok(())
-    }
-}
-
-impl Default for Variables {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
