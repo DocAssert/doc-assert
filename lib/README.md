@@ -39,7 +39,7 @@ HTTP 201
 Content-Type: application/json
 {
     "id": 1,
-    "name": "tes1t abc"
+    "name": "tes1t"
 }
 ```
 
