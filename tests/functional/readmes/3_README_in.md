@@ -69,22 +69,22 @@ This is response for getting all blogs
 ```docassertresponse
 HTTP 200
 Content-Type: application/json
-        [
-          {
-            "body": "This is my sample blog",
-            "comments": null,
-            "date_upd": 1708421556,
-            "id": "a8f376b1-382e-443b-bbfc-7daf0bbdac38",
-            "title": "My First Blog"
-          },
-          {
-            "body": "This is my sample blog",
-            "comments": null,
-            "date_upd": 1708421556,
-            "id": "914ace04-1ad7-4c55-ab92-0876b7206430",
-            "title": "My Second Blog"
-          }
-        ]
+[
+    {
+    "body": "This is my sample blog",
+    "comments": null,
+    "date_upd": 1708421556,
+    "id": "a8f376b1-382e-443b-bbfc-7daf0bbdac38",
+    "title": "My First Blog"
+    },
+    {
+    "body": "This is my sample blog",
+    "comments": null,
+    "date_upd": 1708421556,
+    "id": "914ace04-1ad7-4c55-ab92-0876b7206430",
+    "title": "My Second Blog"
+    }
+]
 ```
 [ignore]: # ($[*].id)
 [ignore]: # ($[*].date_upd)

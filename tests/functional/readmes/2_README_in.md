@@ -34,7 +34,7 @@ Content-Type: application/json
 
 
 
-This request creates blog comment
+This request updates blog comment
 ```docassertrequest
 PUT /blog/`id`
 Content-Type: application/json
