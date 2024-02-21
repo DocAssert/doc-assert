@@ -27,11 +27,8 @@ backend-start:
 	@cd $(BACKEND_DIR) && cargo run &> ./backend.log &
 
 backend-wait:
-	@while ! grep -q 'Rocket has launched' ../sample-api/backend.log; do\
-		echo "Waiting for backend to start...";\
-		sleep 1;\
-	done
-	@echo 'Backend started' 
+	@echo "Waiting for backend to start..."
+	@while ! nc -z localhost 8000; do sleep 1; done
 
 .PHONY: tests sanity backend-stop backend-start backend-wait
 
