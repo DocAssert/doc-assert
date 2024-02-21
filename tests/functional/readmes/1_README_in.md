@@ -18,7 +18,7 @@ Content-Type: application/json
 
 This is response for creating blog without comment
 ```docassertresponse
-HTTP 200
+HTTP 201
 Content-Type: application/json
 {
     "id": "d8f7d454-c436-4e0f-9613-1d69036ad421",
@@ -38,8 +38,6 @@ This request deletes blog with given id
 ```docassertrequest
 DELETE /blog/`id`
 Content-Type: application/json
-{
-}
 ```
 
 This is response for deleting blog
@@ -72,7 +70,7 @@ Content-Type: application/json
 
 This is response for creating blog
 ```docassertresponse
-HTTP 200
+HTTP 201
 Content-Type: application/json
 {
     "id": "d8f7d454-c436-4e0f-9613-1d69036ad421",
@@ -91,8 +89,6 @@ This request deletes blog with given id
 ```docassertrequest
 DELETE /blog/`id`
 Content-Type: application/json
-{
-}
 ```
 
 This is response for deleting blog

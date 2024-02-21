@@ -34,7 +34,7 @@ An expected response can be defined like this:
 
 ~~~markdown
 ```docassertresponse
-HTTP 200
+HTTP 201
 Content-Type: application/json
 {
     "id": "d8f7d454-c436-4e0f-9613-1d69036ad421",
@@ -48,7 +48,7 @@ Content-Type: application/json
 
 ~~~
 
-This configuration tells DocAssert to expect a response with the status code `200` and the
+This configuration tells DocAssert to expect a response with the status code `201` and the
 `Content-Type: application/json` header. The response body will be checked as well, but you can specify JSONPaths
 that you wish to ignore. This feature is useful if your responses contain random values like IDs or timestamps.
 Remember to place `[ignore]: # (your_json_path)` after the response code block. You can include as many of these as
