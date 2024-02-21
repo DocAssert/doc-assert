@@ -17,7 +17,7 @@ pub mod path;
 use misc::{Indent, Indexes};
 use path::{JSONPath, Key, Path};
 use serde_json::Value;
-use std::{collections::HashSet, fmt};
+use std::{collections::HashSet, fmt, hash::Hash};
 
 /// Mode for how JSON values should be compared.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -49,6 +49,7 @@ pub(crate) struct Config {
     pub(crate) compare_mode: CompareMode,
     pub(crate) numeric_mode: NumericMode,
     pub(crate) ignore_paths: Vec<Path>,
+    pub(crate) ignore_orders: Vec<Path>,
 }
 
 impl Config {
@@ -60,6 +61,7 @@ impl Config {
             compare_mode,
             numeric_mode: NumericMode::Strict,
             ignore_paths: vec![],
+            ignore_orders: vec![],
         }
     }
 
@@ -86,6 +88,18 @@ impl Config {
     /// Checks if the given path should be ignored.
     pub fn to_ignore(&self, path: &Path) -> bool {
         self.ignore_paths.iter().any(|p| p.prefixes(path))
+    }
+
+    /// Add a path to the list of paths to ignore order.
+    /// This is only used when comparing arrays.
+    pub fn ignore_order(mut self, path: Path) -> Self {
+        self.ignore_orders.push(path);
+        self
+    }
+
+    /// Checks if the given path should be ignored order.
+    pub fn to_ignore_order(&self, path: &Path) -> bool {
+        self.ignore_orders.iter().any(|p| p.prefixes(path))
     }
 }
 
@@ -251,6 +265,94 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
         }
     }
 
+    fn on_array_unordered(&mut self, expected_json: &'a Value) {
+        if let Some(actual) = self.actual.as_array() {
+            let expected = expected_json.as_array().unwrap();
+            if actual.len() > expected.len() {
+                if self.config.to_ignore(&self.path) {
+                    return;
+                }
+
+                self.acc.push(Difference {
+                    expected: Some(expected_json),
+                    actual: Some(self.actual),
+                    path: self.path.clone(),
+                    config: self.config.clone(),
+                });
+            }
+
+            if actual.len() != expected.len() && self.config.compare_mode == CompareMode::Strict {
+                if self.config.to_ignore(&self.path) {
+                    return;
+                }
+
+                self.acc.push(Difference {
+                    expected: Some(expected_json),
+                    actual: Some(self.actual),
+                    path: self.path.clone(),
+                    config: self.config.clone(),
+                });
+            }
+
+            let mut visited_keys: HashSet<usize> = HashSet::new();
+
+            for (idx, value) in actual.iter().enumerate() {
+                let mut found = false;
+                let path = self.path.append(Key::Idx(idx));
+
+                for (expected_idx, expected_value) in expected.iter().enumerate() {
+                    if visited_keys.contains(&expected_idx) {
+                        continue;
+                    }
+
+                    let mut acc: Vec<Difference<'a>> = vec![];
+
+                    println!("comapring {} with {}", expected_value, value);
+
+                    diff_with(
+                        expected_value,
+                        value,
+                        self.config.clone(),
+                        path.clone(),
+                        &mut acc,
+                    );
+
+                    if acc.is_empty() {
+                        visited_keys.insert(expected_idx);
+                        found = true;
+                        break;
+                    }
+                }
+
+                if !found {
+                    if self.config.to_ignore(&self.path) {
+                        continue;
+                    }
+
+                    self.acc.push(Difference {
+                        expected: Some(expected_json),
+                        actual: Some(self.actual),
+                        path: self.path.clone(),
+                        config: self.config.clone(),
+                    });
+                }
+            }
+
+            if visited_keys.len() != expected.len() {
+                if self.config.to_ignore(&self.path) {
+                    return;
+                }
+
+                self.acc.push(Difference {
+                    expected: Some(expected_json),
+                    actual: Some(self.actual),
+                    path: self.path.clone(),
+                    config: self.config.clone(),
+                });
+            }
+        }
+    }
+
     fn on_object(&mut self, expected: &'a Value) {
         if let Some(actual) = self.actual.as_object() {
             let expected = expected.as_object().unwrap();
@@ -397,7 +499,13 @@ fn fold_json<'a>(json: &'a Value, folder: &mut DiffFolder<'a, '_>) {
         Value::Bool(_) => folder.on_bool(json),
         Value::Number(_) => folder.on_number(json),
         Value::String(_) => folder.on_string(json),
-        Value::Array(_) => folder.on_array(json),
+        Value::Array(_) => {
+            if folder.config.to_ignore_order(&folder.path) {
+                folder.on_array_unordered(json)
+            } else {
+                folder.on_array(json)
+            }
+        }
         Value::Object(_) => folder.on_object(json),
     }
 }
@@ -687,6 +795,22 @@ mod test {
         let config = Config::new(CompareMode::Strict).ignore_path(ignore_path);
         let diffs = diff(&expected, &actual, config);
         assert_ne!(diffs.len(), 0);
+
+        let expected = json!({ "a": [ "b", "c" ] });
+        let actual = json!({ "a": [ "c", "b" ] });
+        let ignore_order_path = Path::from_jsonpath("$.a").unwrap();
+
+        let config = Config::new(CompareMode::Strict).ignore_order(ignore_order_path);
+        let diffs = diff(&expected, &actual, config);
+        assert_eq!(diffs.len(), 0);
+
+        let expected = json!({ "a": [ "b", "c" ] });
+        let actual = json!({ "a": [ "c", "d" ] });
+        let ignore_order_path = Path::from_jsonpath("$.a").unwrap();
+
+        let config = Config::new(CompareMode::Strict).ignore_order(ignore_order_path);
+        let diffs = diff(&expected, &actual, config);
+        assert_eq!(diffs.len(), 2);
     }
 
     #[test]
@@ -704,7 +828,7 @@ mod test {
             Config::new(CompareMode::Strict),
         );
 
-        assert_eq!(diffs.len(), 20);
+        assert_eq!(diffs.len(), 26);
 
         let diffs = diff(
             &expected_json,
@@ -712,7 +836,7 @@ mod test {
             Config::new(CompareMode::Strict).ignore_path("$.user.name".jsonpath().unwrap()),
         );
 
-        assert_eq!(diffs.len(), 19);
+        assert_eq!(diffs.len(), 25);
 
         let diffs = diff(
             &expected_json,
@@ -721,7 +845,7 @@ mod test {
                 .ignore_path("$.user.name".jsonpath().unwrap())
                 .ignore_path("$.user.profile.age".jsonpath().unwrap()),
         );
-        assert_eq!(diffs.len(), 18);
+        assert_eq!(diffs.len(), 24);
 
         let diffs = diff(
             &expected_json,
@@ -731,7 +855,7 @@ mod test {
                 .ignore_path("$.user.profile.age".jsonpath().unwrap())
                 .ignore_path("$.user.comments[*].timestamp".jsonpath().unwrap()),
         );
-        assert_eq!(diffs.len(), 17);
+        assert_eq!(diffs.len(), 23);
 
         let diffs = diff(
             &expected_json,
@@ -745,6 +869,18 @@ mod test {
             let path_str = format!("{}", diff.path);
             assert!(!path_str.starts_with(".user.comments"))
         }
+        assert_eq!(diffs.len(), 20);
+
+        let diffs = diff(
+            &expected_json,
+            &actual_json,
+            Config::new(CompareMode::Strict)
+                .ignore_path("$.user.name".jsonpath().unwrap())
+                .ignore_path("$.user.profile.age".jsonpath().unwrap())
+                .ignore_path("$.user.comments[*].*".jsonpath().unwrap())
+                .ignore_order("$.system.components".jsonpath().unwrap()),
+        );
+
         assert_eq!(diffs.len(), 14);
     }
 }
