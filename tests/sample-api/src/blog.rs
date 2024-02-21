@@ -16,9 +16,10 @@ use std::collections::HashMap;
 use crate::domain::{AllBlogs, BlogMap, BlogPost};
 use rocket::serde::json::{json, Json, Value};
 use rocket::serde::uuid::Uuid;
+use rocket::response::status::Created;
 
 #[post("/", format = "json", data = "<blog>")]
-async fn create(blog: Json<BlogPost>, list: AllBlogs<'_>) -> Json<BlogPost> {
+async fn create(blog: Json<BlogPost>, list: AllBlogs<'_>) -> Created<Json<BlogPost>> {
     let mut blogs = list.lock().await;
 
     let id = Uuid::new_v4();
@@ -29,7 +30,8 @@ async fn create(blog: Json<BlogPost>, list: AllBlogs<'_>) -> Json<BlogPost> {
 
     blogs.insert(id, blog.clone());
 
-    Json(blog)
+    let url = format!("blog/{}", id);
+    Created::new(url).body(Json(blog))
 }
 
 #[put("/<id>", format = "json", data = "<blog>")]
