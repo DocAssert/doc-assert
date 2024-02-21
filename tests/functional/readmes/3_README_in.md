@@ -88,7 +88,7 @@ Content-Type: application/json
           }
         ]
 ```
-[ignore]: # ($.id)
-[ignore]: # ($.date_upd)
-[ignore]: # ($.comments)
+[ignore]: # ($[*].id)
+[ignore]: # ($[*].date_upd)
+[ignore]: # ($[*].comments)
 
