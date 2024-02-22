@@ -72,6 +72,7 @@ pub(crate) struct Response {
     pub code: u16,
     pub headers: HashMap<String, String>,
     pub ignore_paths: Vec<String>,
+    pub ignore_orders: Vec<String>,
     pub body: Option<String>,
     pub line_number: usize,
     pub variables: HashMap<String, Path>,
