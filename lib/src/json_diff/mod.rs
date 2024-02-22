@@ -264,8 +264,6 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
 
                     let mut acc = Accumulator::flag();
 
-                    println!("Comparing {} with {}", expected_value, value);
-
                     diff_with(expected_value, value, self.config, path.clone(), &mut acc);
 
                     if !acc.has_diff() {
