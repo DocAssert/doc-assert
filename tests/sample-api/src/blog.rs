@@ -30,8 +30,7 @@ async fn create(blog: Json<BlogPost>, list: AllBlogs<'_>) -> Created<Json<BlogPo
 
     blogs.insert(id, blog.clone());
 
-    let url = format!("blog/{}", id);
-    Created::new(url).body(Json(blog))
+    Created::new(format!("blog/{}", id)).body(Json(blog))
 }
 
 #[put("/<id>", format = "json", data = "<blog>")]
