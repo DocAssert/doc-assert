@@ -108,17 +108,19 @@ pub(crate) fn diff<'a>(
     actual: &'a Value,
     config: Config,
 ) -> Vec<Difference<'a>> {
-    let mut acc = vec![];
-    diff_with(expected, actual, config, Path::Root, &mut acc);
-    acc
+    let mut acc = Accumulator::collector();
+
+    diff_with(expected, actual, &config, Path::Root, &mut acc);
+
+    acc.into_vec()
 }
 
 fn diff_with<'a>(
     expected: &'a Value,
     actual: &'a Value,
-    config: Config,
+    config: &Config,
     path: Path,
-    acc: &mut Vec<Difference<'a>>,
+    acc: &mut Accumulator<'a>,
 ) {
     let mut folder = DiffFolder {
         actual,
@@ -129,29 +131,47 @@ fn diff_with<'a>(
 
     fold_json(expected, &mut folder);
 }
-
 #[derive(Debug)]
 struct DiffFolder<'a, 'b> {
     actual: &'a Value,
     path: Path,
-    acc: &'b mut Vec<Difference<'a>>,
-    config: Config,
+    acc: &'b mut Accumulator<'a>,
+    config: &'b Config,
+}
+
+macro_rules! accumulate {
+    ($self:expr, $expected:expr, $actual:expr) => {
+        $self.acc.accumulate(
+            &$self.config,
+            &$self.path,
+            Difference {
+                expected: $expected,
+                actual: $actual,
+                path: $self.path.clone(),
+                compare_mode: $self.config.compare_mode,
+            },
+        );
+
+        if let Accumulator::Flag(true) = $self.acc {
+            return;
+        }
+    };
 }
 
 macro_rules! direct_compare {
     ($name:ident) => {
         fn $name(&mut self, expected: &'a Value) {
             if self.actual != expected {
-                if self.config.to_ignore(&self.path) {
-                    return;
-                }
-
-                self.acc.push(Difference {
-                    expected: Some(expected),
-                    actual: Some(&self.actual),
-                    path: self.path.clone(),
-                    config: self.config.clone(),
-                });
+                self.acc.accumulate(
+                    &self.config,
+                    &self.path,
+                    Difference {
+                        expected: Some(expected),
+                        actual: Some(&self.actual),
+                        path: self.path.clone(),
+                        compare_mode: self.config.compare_mode,
+                    },
+                );
             }
         }
     };
@@ -168,17 +188,8 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
             NumericMode::AssumeFloat => self.actual.as_f64() == expected.as_f64(),
         };
 
-        if self.config.to_ignore(&self.path) {
-            return;
-        }
-
         if !is_equal {
-            self.acc.push(Difference {
-                expected: Some(expected),
-                actual: Some(self.actual),
-                path: self.path.clone(),
-                config: self.config.clone(),
-            });
+            accumulate!(self, Some(expected), Some(self.actual));
         }
     }
 
@@ -192,18 +203,9 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
                         let path = self.path.append(Key::Idx(idx));
 
                         if let Some(expected) = expected.get(idx) {
-                            diff_with(expected, actual, self.config.clone(), path, self.acc)
+                            diff_with(expected, actual, self.config, path, self.acc)
                         } else {
-                            if self.config.to_ignore(&path) {
-                                continue;
-                            }
-
-                            self.acc.push(Difference {
-                                expected: None,
-                                actual: Some(self.actual),
-                                path,
-                                config: self.config.clone(),
-                            });
+                            accumulate!(self, None, Some(self.actual));
                         }
                     }
                 }
@@ -218,31 +220,13 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
 
                         match (expected.get(key), actual.get(key)) {
                             (Some(expected), Some(actual)) => {
-                                diff_with(expected, actual, self.config.clone(), path, self.acc);
+                                diff_with(expected, actual, self.config, path, self.acc);
                             }
                             (None, Some(actual)) => {
-                                if self.config.to_ignore(&path) {
-                                    continue;
-                                }
-
-                                self.acc.push(Difference {
-                                    expected: None,
-                                    actual: Some(actual),
-                                    path,
-                                    config: self.config.clone(),
-                                });
+                                accumulate!(self, None, Some(actual));
                             }
                             (Some(expected), None) => {
-                                if self.config.to_ignore(&path) {
-                                    continue;
-                                }
-
-                                self.acc.push(Difference {
-                                    expected: Some(expected),
-                                    actual: None,
-                                    path,
-                                    config: self.config.clone(),
-                                });
+                                accumulate!(self, Some(expected), None);
                             }
                             (None, None) => {
                                 unreachable!("at least one of the maps should have the key")
@@ -252,16 +236,7 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
                 }
             }
         } else {
-            if self.config.to_ignore(&self.path) {
-                return;
-            }
-
-            self.acc.push(Difference {
-                expected: Some(expected),
-                actual: Some(self.actual),
-                path: self.path.clone(),
-                config: self.config.clone(),
-            });
+            accumulate!(self, Some(expected), Some(self.actual));
         }
     }
 
@@ -269,29 +244,11 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
         if let Some(actual) = self.actual.as_array() {
             let expected = expected_json.as_array().unwrap();
             if actual.len() > expected.len() {
-                if self.config.to_ignore(&self.path) {
-                    return;
-                }
-
-                self.acc.push(Difference {
-                    expected: Some(expected_json),
-                    actual: Some(self.actual),
-                    path: self.path.clone(),
-                    config: self.config.clone(),
-                });
+                accumulate!(self, Some(expected_json), Some(self.actual));
             }
 
             if actual.len() != expected.len() && self.config.compare_mode == CompareMode::Strict {
-                if self.config.to_ignore(&self.path) {
-                    return;
-                }
-
-                self.acc.push(Difference {
-                    expected: Some(expected_json),
-                    actual: Some(self.actual),
-                    path: self.path.clone(),
-                    config: self.config.clone(),
-                });
+                accumulate!(self, Some(expected_json), Some(self.actual));
             }
 
             let mut visited_keys: HashSet<usize> = HashSet::new();
@@ -305,19 +262,11 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
                         continue;
                     }
 
-                    let mut acc: Vec<Difference<'a>> = vec![];
+                    let mut acc = Accumulator::flag();
 
-                    println!("comapring {} with {}", expected_value, value);
+                    diff_with(expected_value, value, self.config, path.clone(), &mut acc);
 
-                    diff_with(
-                        expected_value,
-                        value,
-                        self.config.clone(),
-                        path.clone(),
-                        &mut acc,
-                    );
-
-                    if acc.is_empty() {
+                    if !acc.has_diff() {
                         visited_keys.insert(expected_idx);
                         found = true;
                         break;
@@ -325,30 +274,12 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
                 }
 
                 if !found {
-                    if self.config.to_ignore(&self.path) {
-                        continue;
-                    }
-
-                    self.acc.push(Difference {
-                        expected: Some(expected_json),
-                        actual: Some(self.actual),
-                        path: self.path.clone(),
-                        config: self.config.clone(),
-                    });
+                    accumulate!(self, Some(expected_json), Some(self.actual));
                 }
             }
 
             if visited_keys.len() != expected.len() {
-                if self.config.to_ignore(&self.path) {
-                    return;
-                }
-
-                self.acc.push(Difference {
-                    expected: Some(expected_json),
-                    actual: Some(self.actual),
-                    path: self.path.clone(),
-                    config: self.config.clone(),
-                });
+                accumulate!(self, Some(expected_json), Some(self.actual));
             }
         }
     }
@@ -363,18 +294,9 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
                         let path = self.path.append(Key::Field(key.clone()));
 
                         if let Some(expected) = expected.get(key) {
-                            diff_with(expected, actual, self.config.clone(), path, self.acc)
+                            diff_with(expected, actual, self.config, path, self.acc)
                         } else {
-                            if self.config.to_ignore(&path) {
-                                continue;
-                            }
-
-                            self.acc.push(Difference {
-                                expected: None,
-                                actual: Some(self.actual),
-                                path,
-                                config: self.config.clone(),
-                            });
+                            accumulate!(self, None, Some(self.actual));
                         }
                     }
                 }
@@ -385,31 +307,13 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
 
                         match (expected.get(key), actual.get(key)) {
                             (Some(expected), Some(actual)) => {
-                                diff_with(expected, actual, self.config.clone(), path, self.acc);
+                                diff_with(expected, actual, self.config, path, self.acc);
                             }
                             (None, Some(actual)) => {
-                                if self.config.to_ignore(&path) {
-                                    continue;
-                                }
-
-                                self.acc.push(Difference {
-                                    expected: None,
-                                    actual: Some(actual),
-                                    path,
-                                    config: self.config.clone(),
-                                });
+                                accumulate!(self, None, Some(actual));
                             }
                             (Some(expected), None) => {
-                                if self.config.to_ignore(&path) {
-                                    continue;
-                                }
-
-                                self.acc.push(Difference {
-                                    expected: Some(expected),
-                                    actual: None,
-                                    path,
-                                    config: self.config.clone(),
-                                });
+                                accumulate!(self, Some(expected), None);
                             }
                             (None, None) => {
                                 unreachable!("at least one of the maps should have the key")
@@ -419,16 +323,58 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
                 }
             }
         } else {
-            if self.config.to_ignore(&self.path) {
-                return;
-            }
+            accumulate!(self, Some(expected), Some(self.actual));
+        }
+    }
+}
 
-            self.acc.push(Difference {
-                expected: Some(expected),
-                actual: Some(self.actual),
-                path: self.path.clone(),
-                config: self.config.clone(),
-            });
+#[derive(Debug)]
+enum Accumulator<'a> {
+    Vec(Vec<Difference<'a>>),
+    Flag(bool),
+}
+
+impl<'a> Accumulator<'a> {
+    fn collector() -> Self {
+        Accumulator::Vec(vec![])
+    }
+
+    fn flag() -> Self {
+        Accumulator::Flag(false)
+    }
+
+    fn accumulate(&mut self, config: &Config, path: &Path, diff: Difference<'a>) -> bool {
+        match self {
+            Accumulator::Vec(vec) => {
+                if config.to_ignore(path) {
+                    return true;
+                }
+
+                vec.push(diff);
+
+                false
+            }
+            Accumulator::Flag(value) => {
+                if !*value {
+                    *value = true;
+                }
+
+                true
+            }
+        }
+    }
+
+    fn has_diff(&self) -> bool {
+        match self {
+            Accumulator::Vec(vec) => !vec.is_empty(),
+            Accumulator::Flag(value) => *value,
+        }
+    }
+
+    fn into_vec(self) -> Vec<Difference<'a>> {
+        match self {
+            Accumulator::Vec(vec) => vec,
+            Accumulator::Flag(_) => vec![],
         }
     }
 }
@@ -438,14 +384,14 @@ pub(crate) struct Difference<'a> {
     path: Path,
     expected: Option<&'a Value>,
     actual: Option<&'a Value>,
-    config: Config,
+    compare_mode: CompareMode,
 }
 
 impl<'a> fmt::Display for Difference<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let json_to_string = |json: &Value| serde_json::to_string_pretty(json).unwrap();
 
-        match (&self.config.compare_mode, &self.expected, &self.actual) {
+        match (&self.compare_mode, &self.expected, &self.actual) {
             (CompareMode::Inclusive, Some(expected), Some(actual)) => {
                 writeln!(f, "json atoms at path \"{}\" are not equal:", self.path)?;
                 writeln!(f, "    actual:")?;
