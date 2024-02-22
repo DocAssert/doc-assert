@@ -172,6 +172,10 @@ macro_rules! direct_compare {
                         compare_mode: self.config.compare_mode,
                     },
                 );
+
+                if let Accumulator::Flag(true) = self.acc {
+                    return;
+                }
             }
         }
     };
@@ -200,6 +204,10 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
             match self.config.compare_mode {
                 CompareMode::Inclusive => {
                     for (idx, actual) in actual.iter().enumerate() {
+                        if let Accumulator::Flag(true) = self.acc {
+                            return;
+                        }
+
                         let path = self.path.append(Key::Idx(idx));
 
                         if let Some(expected) = expected.get(idx) {
@@ -216,6 +224,10 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
                         .chain(expected.indexes())
                         .collect::<HashSet<_>>();
                     for key in all_keys {
+                        if let Accumulator::Flag(true) = self.acc {
+                            return;
+                        }
+
                         let path = self.path.append(Key::Idx(key));
 
                         match (expected.get(key), actual.get(key)) {
@@ -291,6 +303,10 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
             match self.config.compare_mode {
                 CompareMode::Inclusive => {
                     for (key, actual) in actual.iter() {
+                        if let Accumulator::Flag(true) = self.acc {
+                            return;
+                        }
+
                         let path = self.path.append(Key::Field(key.clone()));
 
                         if let Some(expected) = expected.get(key) {
@@ -303,6 +319,10 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
                 CompareMode::Strict => {
                     let all_keys = actual.keys().chain(expected.keys()).collect::<HashSet<_>>();
                     for key in all_keys {
+                        if let Accumulator::Flag(true) = self.acc {
+                            return;
+                        }
+
                         let path = self.path.append(Key::Field(key.clone()));
 
                         match (expected.get(key), actual.get(key)) {
