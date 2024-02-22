@@ -99,7 +99,7 @@ impl Config {
 
     /// Checks if the given path should be ignored order.
     pub fn to_ignore_order(&self, path: &Path) -> bool {
-        self.ignore_orders.iter().any(|p| p.prefixes(path))
+        self.ignore_orders.iter().any(|p| p == path)
     }
 }
 
