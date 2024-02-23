@@ -89,6 +89,7 @@ Content-Type: application/json
 [ignore]: # ($[*].id)
 [ignore]: # ($[*].date_upd)
 [ignore]: # ($[*].comments)
+[ignore-order]: # ($)
 
 This request deletes blog with given id
 ```docassertrequest
