@@ -24,6 +24,7 @@ use crate::json_diff::path::{JSONPath, Path, JSON_PATH_REGEX};
 const DOC_ASSERT_REQUEST: &str = "```docassertrequest";
 const DOC_ASSERT_RESPONSE: &str = "```docassertresponse";
 const IGNORE_PREFIX: &str = "[ignore]";
+const IGNORE_ORDER_PREFIX: &str = "[ignore-order]";
 const VARIABLE_PREFIX: &str = "[let ";
 
 pub(crate) fn parse(path: String) -> Result<Vec<TestCase>, String> {
@@ -58,6 +59,17 @@ pub(crate) fn parse(path: String) -> Result<Vec<TestCase>, String> {
             }
             let l = responses.len();
             responses[l - 1].ignore_paths.push(get_ignore_path(line)?);
+        }
+
+        if line.starts_with(IGNORE_ORDER_PREFIX) {
+            if responses.is_empty() || responses.len() != requests.len() {
+                return Err(format!(
+                    "misplaced ignore-order at line {}: {}",
+                    line_no, line
+                ));
+            }
+            let l = responses.len();
+            responses[l - 1].ignore_orders.push(get_ignore_path(line)?);
         }
 
         if line.starts_with(VARIABLE_PREFIX) {
@@ -187,6 +199,7 @@ fn get_response(code_block_line_no: usize, code: String) -> Result<Response, Str
         code: http_code,
         headers,
         ignore_paths: vec![],
+        ignore_orders: vec![],
         body,
         line_number: code_block_line_no,
         variables: HashMap::new(),

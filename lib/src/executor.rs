@@ -89,6 +89,12 @@ async fn assert_response(
                     .map_err(|err| format!("invalid path {}: {}", path, err))?,
             );
         }
+        for order in test_response.ignore_orders.iter() {
+            diff_config = diff_config.ignore_order(
+                Path::from_jsonpath(order.as_str())
+                    .map_err(|err| format!("invalid path {}: {}", order, err))?,
+            );
+        }
         let response_body = response.text().await.map_err(|e| e.to_string())?;
         let actual = &serde_json::from_str::<serde_json::Value>(response_body.as_str())
             .map_err(|err| format!("error parsing JSON response from the server: {}", err))?;
@@ -194,6 +200,7 @@ mod tests {
                     .into_iter()
                     .collect(),
                 ignore_paths: vec!["$.id".to_string()],
+                ignore_orders: vec![],
                 body: Some(response_body.to_string()),
                 line_number: 2,
                 variables: HashMap::new(),
@@ -259,6 +266,7 @@ mod tests {
                     .into_iter()
                     .collect(),
                 ignore_paths: vec!["$.id".to_string()],
+                ignore_orders: vec![],
                 body: Some(response_body.to_string()),
                 line_number: 2,
                 variables: response_variables,
@@ -292,6 +300,7 @@ mod tests {
                     .into_iter()
                     .collect(),
                 ignore_paths: vec![],
+                ignore_orders: vec![],
                 body: Some(response_body.to_string()),
                 line_number: 4,
                 variables: HashMap::new(),

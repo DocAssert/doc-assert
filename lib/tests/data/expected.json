@@ -29,7 +29,12 @@
       "maintenance": {
         "scheduled": true,
         "time": "2024-02-01T03:00:00Z"
-      }
+      },
+      "components": [
+        { "id": 3, "name": "component3", "status": "down" },
+        { "id": 2, "name": "component2", "status": "degraded" },
+        { "id": 1, "name": "component1", "status": "ok" }
+      ]
     }
   }
   
