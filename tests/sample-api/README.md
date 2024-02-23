@@ -89,14 +89,14 @@ Content-Type: application/json
 [
     {
         "id": 1,
-        "title": "Title",
+        "title": "Title 2",
         "body": `body`,
         "date_upd": 1,
         "comments": null
     }, 
     {
         "id": 1,
-        "title": "Title 2",
+        "title": "Title",
         "body": `body`,
         "date_upd": 1,
         "comments": null

@@ -15,15 +15,16 @@ First, you need to define your documentation in the `README.md` file. A request 
 
 ~~~markdown
 ```docassertrequest
-POST /api/user
+POST /blog
 Content-Type: application/json
 {
-    "name": "test"
+    "title": "My First Blog",
+    "body": "Blog content"
 }
 ```
 ~~~
 
-The above definition instructs DocAssert to send a `POST` request to `/api/user` with the
+The above definition instructs DocAssert to send a `POST` request to `/blog` with the
 `Content-Type: application/json` header and the body as specified in the code block. Note the `docassertrequest`
 at the beginning of the code block. Your documentation can contain any amount of text, code blocks, and other
 elements between the DocAssert code blocks. Only the code blocks with `docassertrequest` and `docassertresponse`
@@ -33,15 +34,18 @@ An expected response can be defined like this:
 
 ~~~markdown
 ```docassertresponse
-HTTP 201
+HTTP 200
 Content-Type: application/json
 {
-    "id": 1,
-    "name": "test"
+    "id": "d8f7d454-c436-4e0f-9613-1d69036ad421",
+    "title": "My First Blog",
+    "body": "Blog content"
 }
 ```
-
 [ignore]: # ($.id)
+[ignore]: # ($.date_upd)
+[ignore]: # ($.comments)
+
 ~~~
 
 This configuration tells DocAssert to expect a response with the status code `201` and the
