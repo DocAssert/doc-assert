@@ -100,7 +100,7 @@ async fn assert_response(
             .map_err(|err| format!("error parsing JSON response from the server: {}", err))?;
         let expected = &serde_json::from_str::<serde_json::Value>(test_body.as_str())
             .map_err(|err| format!("error parsing JSON: {}", err))?;
-        let diff_result = diff(actual, expected, diff_config);
+        let diff_result = diff(expected, actual, diff_config);
         if !diff_result.is_empty() {
             return Err(format!(
                 "expected response differs from actual {}",
