@@ -141,14 +141,14 @@ struct DiffFolder<'a, 'b> {
 }
 
 macro_rules! accumulate {
-    ($self:expr, $expected:expr, $actual:expr) => {
+    ($self:expr, $path:expr, $expected:expr, $actual:expr) => {
         $self.acc.accumulate(
             &$self.config,
-            &$self.path,
+            &$path,
             Difference {
                 expected: $expected,
                 actual: $actual,
-                path: $self.path.clone(),
+                path: $path,
                 compare_mode: $self.config.compare_mode,
             },
         );
@@ -194,7 +194,7 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
         };
 
         if !is_equal {
-            accumulate!(self, Some(expected), Some(self.actual));
+            accumulate!(self, self.path.clone(), Some(expected), Some(self.actual));
         }
     }
 
@@ -214,7 +214,7 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
                         if let Some(expected) = expected.get(idx) {
                             diff_with(expected, actual, self.config, path, self.acc)
                         } else {
-                            accumulate!(self, None, Some(self.actual));
+                            accumulate!(self, path.clone(), None, Some(self.actual));
                         }
                     }
                 }
@@ -236,10 +236,10 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
                                 diff_with(expected, actual, self.config, path, self.acc);
                             }
                             (None, Some(actual)) => {
-                                accumulate!(self, None, Some(actual));
+                                accumulate!(self, path.clone(), None, Some(actual));
                             }
                             (Some(expected), None) => {
-                                accumulate!(self, Some(expected), None);
+                                accumulate!(self, path.clone(), Some(expected), None);
                             }
                             (None, None) => {
                                 unreachable!("at least one of the maps should have the key")
@@ -249,7 +249,7 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
                 }
             }
         } else {
-            accumulate!(self, Some(expected), Some(self.actual));
+            accumulate!(self, self.path.clone(), Some(expected), Some(self.actual));
         }
     }
 
@@ -257,11 +257,21 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
         if let Some(actual) = self.actual.as_array() {
             let expected = expected_json.as_array().unwrap();
             if actual.len() > expected.len() {
-                accumulate!(self, Some(expected_json), Some(self.actual));
+                accumulate!(
+                    self,
+                    self.path.clone(),
+                    Some(expected_json),
+                    Some(self.actual)
+                );
             }
 
             if actual.len() != expected.len() && self.config.compare_mode == CompareMode::Strict {
-                accumulate!(self, Some(expected_json), Some(self.actual));
+                accumulate!(
+                    self,
+                    self.path.clone(),
+                    Some(expected_json),
+                    Some(self.actual)
+                );
             }
 
             let mut visited_keys: HashSet<usize> = HashSet::new();
@@ -287,12 +297,17 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
                 }
 
                 if !found {
-                    accumulate!(self, Some(expected_json), Some(self.actual));
+                    accumulate!(self, path.clone(), Some(expected_json), Some(self.actual));
                 }
             }
 
             if visited_keys.len() != expected.len() {
-                accumulate!(self, Some(expected_json), Some(self.actual));
+                accumulate!(
+                    self,
+                    self.path.clone(),
+                    Some(expected_json),
+                    Some(self.actual)
+                );
             }
         }
     }
@@ -313,7 +328,7 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
                         if let Some(expected) = expected.get(key) {
                             diff_with(expected, actual, self.config, path, self.acc)
                         } else {
-                            accumulate!(self, None, Some(self.actual));
+                            accumulate!(self, path.clone(), None, Some(self.actual));
                         }
                     }
                 }
@@ -331,10 +346,10 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
                                 diff_with(expected, actual, self.config, path, self.acc);
                             }
                             (None, Some(actual)) => {
-                                accumulate!(self, None, Some(actual));
+                                accumulate!(self, path.clone(), None, Some(actual));
                             }
                             (Some(expected), None) => {
-                                accumulate!(self, Some(expected), None);
+                                accumulate!(self, path.clone(), Some(expected), None);
                             }
                             (None, None) => {
                                 unreachable!("at least one of the maps should have the key")
@@ -344,7 +359,7 @@ impl<'a, 'b> DiffFolder<'a, 'b> {
                 }
             }
         } else {
-            accumulate!(self, Some(expected), Some(self.actual));
+            accumulate!(self, self.path.clone(), Some(expected), Some(self.actual));
         }
     }
 }
@@ -439,9 +454,9 @@ impl<'a> fmt::Display for Difference<'a> {
             (CompareMode::Strict, Some(expected), Some(actual)) => {
                 writeln!(f, "json atoms at path \"{}\" are not equal:", self.path)?;
                 writeln!(f, "    actual:")?;
-                writeln!(f, "{}", json_to_string(expected).indent(8))?;
+                writeln!(f, "{}", json_to_string(actual).indent(8))?;
                 writeln!(f, "    expected:")?;
-                write!(f, "{}", json_to_string(actual).indent(8))?;
+                write!(f, "{}", json_to_string(expected).indent(8))?;
             }
             (CompareMode::Strict, None, Some(_)) => {
                 write!(
