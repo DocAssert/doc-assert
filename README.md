@@ -64,7 +64,14 @@ mod tests {
             .with_doc_path("README.md")
             .assert()
             .await;
-        assert!(result.is_ok());
+        match result {
+            Ok(report) => {
+                // handle report
+            }
+            Err(err) => {
+                // handle error
+            }
+        }
     }
 }
 ```

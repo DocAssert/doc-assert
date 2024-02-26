@@ -1,5 +1,9 @@
+Example documentation used for unit tests
+
 ## User
+
 This request creates user
+
 ```docassertrequest
 POST /api/user
 Content-Type: application/json
@@ -7,9 +11,8 @@ Content-Type: application/json
     "name": "test"
 }
 ```
-And as a response we should get something like this
 
-TODO: figure out how to ignore id which can be random
+And as a response we should get something like this
 
 ```docassertresponse
 HTTP 201
@@ -19,10 +22,13 @@ Content-Type: application/json
     "name": "test"
 }
 ```
+
 [ignore]: # ($.id)
+
 [let name]: # ($.name)
 
-This request creates user
+Now let's add another user
+
 ```docassertrequest
 POST /api/user
 Content-Type: application/json
@@ -30,9 +36,8 @@ Content-Type: application/json
     "name": "test"
 }
 ```
-And as a response we should get something like this
 
-TODO: figure out how to ignore id which can be random
+And as a response we should get something like this
 
 ```docassertresponse
 HTTP 201
@@ -44,7 +49,9 @@ Content-Type: application/json
 ```
 
 ## Unrelated
+
 Some other unrelated code which should not be parsed
+
 ```rust
 fn main() {
     println!("Hello, world!");
