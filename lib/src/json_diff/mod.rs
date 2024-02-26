@@ -17,7 +17,7 @@ pub mod path;
 use misc::{Indent, Indexes};
 use path::{JSONPath, Key, Path};
 use serde_json::Value;
-use std::{collections::HashSet, fmt, hash::Hash};
+use std::{collections::HashSet, fmt};
 
 /// Mode for how JSON values should be compared.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -131,6 +131,7 @@ fn diff_with<'a>(
 
     fold_json(expected, &mut folder);
 }
+
 #[derive(Debug)]
 struct DiffFolder<'a, 'b> {
     actual: &'a Value,

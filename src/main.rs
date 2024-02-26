@@ -22,6 +22,7 @@ use doc_assert::variables::Variables;
 use doc_assert::AssertionError;
 use doc_assert::DocAssert;
 
+#[doc(hidden)]
 #[macro_export]
 macro_rules! write_to_file {
     ($writer:expr, $msg:expr) => {
@@ -39,6 +40,7 @@ macro_rules! write_to_file {
     };
 }
 
+#[doc(hidden)]
 #[derive(Debug, Clone)]
 struct JSONVars(Value);
 
@@ -51,6 +53,7 @@ impl FromStr for JSONVars {
     }
 }
 
+#[doc(hidden)]
 #[macro_export]
 macro_rules! handle_error {
     ($code:expr, $msg:expr, $($arg:tt)*) => {
@@ -64,6 +67,7 @@ macro_rules! handle_error {
     };
 }
 
+#[doc(hidden)]
 struct Code;
 
 impl Code {
@@ -74,6 +78,7 @@ impl Code {
     const DOC_ASSERTION_ERROR: i32 = 4;
 }
 
+#[doc(hidden)]
 #[derive(Debug, Parser)]
 #[command(version, about, long_about = None)]
 struct Cli {
@@ -89,6 +94,7 @@ struct Cli {
     variables: Option<JSONVars>,
 }
 
+#[doc(hidden)]
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
