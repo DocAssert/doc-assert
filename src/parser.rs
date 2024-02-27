@@ -240,7 +240,7 @@ mod tests {
 
     #[test]
     fn test_parse() {
-        let result = parse("README.md".to_string());
+        let result = parse("tests/data/README.md".to_string());
         assert!(result.is_ok());
         let test_cases = result.unwrap();
         assert_eq!(test_cases.len(), 2);

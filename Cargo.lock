@@ -226,20 +226,10 @@ checksum = "06ea2b9bc92be3c2baa9334a323ebca2d6f074ff852cd1d7b11064035cd3868f"
 name = "doc-assert"
 version = "0.1.0"
 dependencies = [
+ "clap",
  "mockito",
  "regex",
  "reqwest",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "doc-assert-bin"
-version = "0.1.0"
-dependencies = [
- "clap",
- "doc-assert",
  "serde",
  "serde_json",
  "tokio",

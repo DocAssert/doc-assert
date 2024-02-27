@@ -27,21 +27,21 @@ jobs:
     name: lint, build & test
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-    - name: Format
-      run: cargo fmt --all -- --check
-    - name: Lint
-      run: cargo clippy # add `-- -D warnings` when ready
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose --workspace
-    - name: Start sample-api backend
-      working-directory: ./tests/functional
-      run:  make backend-start
-    - name: Wait for sample-api backend
-      working-directory: ./tests/functional
-      run: make backend-wait
-    - name: Run sanity functional tests
-      working-directory: ./tests/functional
-      run: make sanity
+      - uses: actions/checkout@v3
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Lint
+        run: cargo clippy # add `-- -D warnings` when ready
+      - name: Build
+        run: cargo build --verbose --features="binary"
+      - name: Run tests
+        run: cargo test --verbose --workspace
+      - name: Start sample-api backend
+        working-directory: ./tests/functional
+        run: make backend-start
+      - name: Wait for sample-api backend
+        working-directory: ./tests/functional
+        run: make backend-wait
+      - name: Run sanity functional tests
+        working-directory: ./tests/functional
+        run: make sanity

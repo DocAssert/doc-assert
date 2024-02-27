@@ -42,10 +42,10 @@ Content-Type: application/json
     "body": "Blog content"
 }
 ```
+
 [ignore]: # ($.id)
 [ignore]: # ($.date_upd)
 [ignore]: # ($.comments)
-
 ~~~
 
 This configuration tells DocAssert to expect a response with the status code `201` and the
@@ -68,17 +68,116 @@ mod tests {
             .with_doc_path("README.md")
             .assert()
             .await;
-        assert!(result.is_ok());
+        match result {
+            Ok(report) => {
+                // handle report
+            }
+            Err(err) => {
+                // handle error
+            }
+        }
     }
 }
 ```
 
 In case of `Err` the result will contain a list of errors with detailed information about what went wrong.
 
+#### Variables
+
+In some case we may need to set some value which will be shared between requests. For instance test auth token.
+
+We can define variable in the API before we run the tests:
+
+```rust
+use doc_assert::DocAssert;
+
+#[cfg(test)]
+mod tests {
+    #[tokio::test]
+    async fn test_docs() {
+        let result = DocAssert::new()
+            .with_url("http://localhost:8080")
+            .with_doc_path("README.md")
+            .with_variable("auth_token", "some_token")
+            .assert()
+            .await;
+        match result {
+            Ok(report) => {
+                // handle report
+            }
+            Err(err) => {
+                // handle error
+            }
+        }
+    }
+}
+```
+
+Variables can be also dynamically defined in the documentation. First we have a request:
+
+~~~markdown
+```docassertrequest
+POST /blog
+Content-Type: application/json
+{
+    "title": "My First Blog",
+    "body": "Blog content"
+}
+```
+~~~
+
+This will result in a response:
+
+~~~markdown
+```docassertresponse
+HTTP 201
+Content-Type: application/json
+{
+    "id": "d8f7d454-c436-4e0f-9613-1d69036ad421",
+    "title": "My First Blog",
+    "body": "Blog content"
+}
+```
+
+[ignore]: # ($.id)
+[ignore]: # ($.date_upd)
+[ignore]: # ($.comments)
+[let id]: # ($.id)
+~~~
+
+In the example above some of the fields are ignored but we also define a variable `id` which will be used in the next
+request. Notice that variable can be defined on ignored field.
+
+Now we can use this variable in the next request:
+
+~~~markdown
+```docassertrequest
+GET /blog/`id`
+```
+~~~
+
+Which will result in a response:
+
+~~~markdown
+```docassertresponse
+HTTP 200
+Content-Type: application/json
+{
+    "id": `id`,
+    "title": "My First Blog",
+    "body": "Blog content"
+}
+```
+[ignore]: # ($.date_upd)
+[ignore]: # ($.comments)
+~~~
+
+Notice that `id` is also used in response and will be evaluated during assertions.
+
 ### Using command line tool
 
 Instead of integrating DocAssert into your tests, you can also use it as a standalone command-line tool:
 
 ```bash
-doc-assert --url http://localhost:8081 lib/README.md
+doc-assert --url http://localhost:8081 --variables '{"auth_token": "some_token"}' README.md
 ```
