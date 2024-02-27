@@ -20,7 +20,7 @@ use reqwest::{Body, Client, Method, Response};
 use crate::domain::{HttpMethod, Request, TestCase};
 use crate::json_diff::path::Path;
 use crate::json_diff::{diff, CompareMode, Config};
-use crate::variables::Variables;
+use crate::Variables;
 
 pub(crate) async fn execute(
     base_url: &str,
@@ -161,7 +161,7 @@ mod tests {
     use crate::domain::{HttpMethod, Request, Response, TestCase};
     use crate::executor::execute;
     use crate::json_diff::path::JSONPath;
-    use crate::variables::{self, Variables};
+    use crate::Variables;
 
     #[tokio::test]
     async fn test_execute() {

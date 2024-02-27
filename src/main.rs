@@ -18,9 +18,9 @@ use std::str::FromStr;
 use clap::Parser;
 use serde_json::Value;
 
-use doc_assert::variables::Variables;
 use doc_assert::AssertionError;
 use doc_assert::DocAssert;
+use doc_assert::Variables;
 
 #[doc(hidden)]
 #[macro_export]

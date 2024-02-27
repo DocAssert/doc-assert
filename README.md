@@ -179,5 +179,5 @@ Notice that `id` is also used in response and will be evaluated during assertion
 Instead of integrating DocAssert into your tests, you can also use it as a standalone command-line tool:
 
 ```bash
-doc-assert --url http://localhost:8081 --variables '{"auth_token": "some_token"}' lib/README.md
+doc-assert --url http://localhost:8081 --variables '{"auth_token": "some_token"}' README.md
 ```
