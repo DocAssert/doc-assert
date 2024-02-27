@@ -31,7 +31,7 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Lint
-        run: cargo clippy # add `-- -D warnings` when ready
+        run: cargo clippy -- -D warnings
       - name: Build
         run: cargo build --verbose --features="binary"
       - name: Run tests

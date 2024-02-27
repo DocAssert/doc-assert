@@ -11,13 +11,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod misc;
-pub mod path;
+#![allow(dead_code)]
+
+use std::{collections::HashSet, fmt};
+
+use serde_json::Value;
 
 use misc::{Indent, Indexes};
-use path::{JSONPath, Key, Path};
-use serde_json::Value;
-use std::{collections::HashSet, fmt};
+use path::{Key, Path};
+
+mod misc;
+pub mod path;
 
 /// Mode for how JSON values should be compared.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -498,10 +502,14 @@ fn fold_json<'a>(json: &'a Value, folder: &mut DiffFolder<'a, '_>) {
 
 #[cfg(test)]
 mod test {
+    use std::fs;
+
+    use serde_json::{json, Result, Value};
+
+    use path::JSONPath;
+
     #[allow(unused_imports)]
     use super::*;
-    use serde_json::{json, Result, Value};
-    use std::fs;
 
     fn load_json_from_file(file_path: &str) -> Result<Value> {
         let data = fs::read_to_string(file_path).expect("Unable to read file");
