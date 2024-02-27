@@ -3,6 +3,7 @@
 **DocAssert** is a documentation testing tool that offers a completely new approach.
 Write your documentation as a story you want to tell your users and test it against your API.
 
+
 ## How it works?
 
 DocAssert reads the specified `README.md` file and scans it for code blocks containing descriptions of requests
@@ -180,4 +181,18 @@ Instead of integrating DocAssert into your tests, you can also use it as a stand
 
 ```bash
 doc-assert --url http://localhost:8081 --variables '{"auth_token": "some_token"}' README.md
+```
+
+## Installation
+
+To use DocAssert as a CLI tool you can install it using cargo:
+
+```bash
+cargo install doc-assert --features="binary"
+```
+
+In order to build it directly from the source code run:
+
+```bash
+cargo build --features="binary"
 ```
