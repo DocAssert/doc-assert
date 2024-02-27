@@ -16,6 +16,19 @@ name = "doc-assert"
 version = "0.1.0"
 edition = "2021"
 description = "Validates markdown API docs against live endpoints, ensuring documentation accuracy."
+keywords = [
+    "documentation",
+    "api",
+    "validation",
+    "testing",
+]
+categories = [
+    "development-tools::testing",
+    "command-line-utilities",
+    "web-programming",
+    "parsing",
+    "parser-implementations",
+]
 
 [dependencies]
 # lib dependencies
