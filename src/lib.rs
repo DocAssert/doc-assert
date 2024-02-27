@@ -12,6 +12,7 @@
 // limitations under the License.
 
 #![doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"))]
+#![allow(clippy::while_let_on_iterator)]
 
 use crate::{
     domain::{Request, Response},
@@ -230,9 +231,9 @@ impl<'a> Default for DocAssert<'a> {
 /// }
 pub struct Report {
     /// Total number of tests
-    total_count: u8,
+    total_count: usize,
     /// Number of failed tests
-    failed_count: u8,
+    failed_count: usize,
     /// Summary of passed and failed tests
     summary: String,
     /// Detailed information about the failed assertions
