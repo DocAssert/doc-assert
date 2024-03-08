@@ -1,4 +1,5 @@
 [![DocAssert](https://github.com/DocAssert/doc-assert/actions/workflows/doc-assert.yml/badge.svg)](https://github.com/DocAssert/doc-assert/actions/workflows/doc-assert.yml)
+[![crates.io](https://img.shields.io/crates/v/doc-assert.svg)](https://crates.io/crates/doc-assert)
 
 **DocAssert** is a documentation testing tool that offers a completely new approach.
 Write your documentation as a story you want to tell your users and test it against your API.
