@@ -259,17 +259,9 @@ fn get_headers_and_body(
             headers.insert(header_parts[0].to_string(), header_parts[1].to_string());
             continue;
         }
-        body.push_str(line);
+        body.push_str(line.trim());
     }
-    let body = if body.is_empty() {
-        None
-    } else {
-        Some(
-            body.chars()
-                .filter(|c| !c.is_whitespace())
-                .collect::<String>(),
-        )
-    };
+    let body = if body.is_empty() { None } else { Some(body) };
     Ok((headers, body))
 }
 
@@ -295,7 +287,7 @@ mod tests {
         );
         assert_eq!(
             test_cases[0].request.body.as_ref().unwrap(),
-            "{\"name\":\"test\"}"
+            "{\"name\": \"test\"}"
         );
         // response
         assert_eq!(test_cases[0].response.code, 201);
@@ -305,7 +297,7 @@ mod tests {
         );
         assert_eq!(
             test_cases[0].response.body.as_ref().unwrap(),
-            "{\"id\":1,\"name\":\"test\"}"
+            "{\"id\": 1,\"name\": \"test\"}"
         );
         assert_eq!(test_cases[0].response.ignore_paths[0], "$.id".to_string());
 
