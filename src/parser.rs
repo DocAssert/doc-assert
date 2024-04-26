@@ -124,8 +124,11 @@ fn get_code(lines: &mut Enumerate<Lines>) -> String {
     buff
 }
 
-fn get_ignore_path(s: &str) -> Result<String, String> {
-    let no_whitespace = s.chars().filter(|c| !c.is_whitespace()).collect::<String>();
+fn get_ignore_path(line: &str) -> Result<String, String> {
+    let no_whitespace = line
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect::<String>();
     let mut path = no_whitespace.split(":#").skip(1).collect::<String>();
     path.remove(0);
     path.pop();
@@ -137,23 +140,23 @@ fn get_ignore_path(s: &str) -> Result<String, String> {
     Ok(path)
 }
 
-fn get_retry_policy(s: &str) -> Result<RetryPolicy, String> {
+fn get_retry_policy(line: &str) -> Result<RetryPolicy, String> {
     let re = Regex::new(r"^\[retry\]:\s#\s\((?<max_retries>\d+),\s*(?<delay>\d+)\)").unwrap();
 
     let caps = re
-        .captures(s)
-        .ok_or(format!("invalid retry properties: {}", s))?;
+        .captures(line)
+        .ok_or(format!("invalid retry properties: {}", line))?;
 
     let max_retries = caps
         .name("max_retries")
-        .ok_or(format!("invalid retry properties: {}", s))?
+        .ok_or(format!("invalid retry properties: {}", line))?
         .as_str()
         .parse::<u64>()
         .map_err(|e| format!("invalid max_retries: {}", e))?;
 
     let delay = caps
         .name("delay")
-        .ok_or(format!("invalid retry properties: {}", s))?
+        .ok_or(format!("invalid retry properties: {}", line))?
         .as_str()
         .parse::<u64>()
         .map_err(|e| format!("invalid delay: {}", e))?;
@@ -161,26 +164,26 @@ fn get_retry_policy(s: &str) -> Result<RetryPolicy, String> {
     Ok(RetryPolicy { max_retries, delay })
 }
 
-fn get_variable_template(s: &str) -> Result<(String, Path), String> {
+fn get_variable_template(line: &str) -> Result<(String, Path), String> {
     let re =
         Regex::new(format!(r"^\[let\s(?<var>\w+)\]:\s#\s\((?<value>{JSON_PATH_REGEX})\)").as_str())
             .unwrap();
 
     let caps = re
-        .captures(s)
-        .ok_or(format!("invalid variable template: {}", s))?;
+        .captures(line)
+        .ok_or(format!("invalid variable template: {}", line))?;
 
     let name = caps
         .name("var")
-        .ok_or(format!("invalid variable template: {}", s))?;
+        .ok_or(format!("invalid variable template: {}", line))?;
 
     let value = caps
         .name("value")
-        .ok_or(format!("invalid variable template: {}", s))?;
+        .ok_or(format!("invalid variable template: {}", line))?;
 
     match value.as_str().jsonpath() {
         Ok(p) => Ok((name.as_str().to_owned(), p)),
-        Err(e) => Err(format!("invalid variable template: {}: {}", s, e)),
+        Err(e) => Err(format!("invalid variable template: {}: {}", line, e)),
     }
 }
 
