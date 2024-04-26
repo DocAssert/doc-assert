@@ -13,6 +13,7 @@
 
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::time::Duration;
 
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::{Body, Client, Method, Response};
@@ -33,30 +34,57 @@ pub(crate) async fn execute(
     let test_request_line_number = test_request.line_number;
     let http_method = &test_request.http_method;
     let uri = &test_request.uri;
-    let response = get_response(base_url, &test_request).await.map_err(|err| {
-        format!(
-            "error executing request {} {} defined at line {}: {}",
-            http_method, uri, test_request_line_number, err
-        )
-    })?;
+
     let mut test_response = test_case.response;
     variables.replace_response_placeholders(&mut test_response)?;
+    let test_response_line_number: usize = test_response.line_number;
 
-    let test_response_line_number = test_response.line_number;
-
-    assert_response(response, test_response, variables)
-        .await
-        .map_err(|err| {
+    for i in 0..test_response.retries.max_retries {
+        let response = get_response(base_url, &test_request).await.map_err(|err| {
             format!(
-                "error asserting response from {} {} defined at line {}: {}",
-                http_method, uri, test_response_line_number, err
+                "error executing request {} {} defined at line {}: {}",
+                http_method, uri, test_request_line_number, err
             )
-        })
+        });
+
+        match response {
+            Err(e) => {
+                if i == test_response.retries.max_retries - 1 {
+                    return Err(e);
+                }
+                tokio::time::sleep(Duration::from_millis(test_response.retries.delay)).await;
+                continue;
+            }
+            Ok(response) => {
+                let assert_response = assert_response(response, &test_response, variables)
+                    .await
+                    .map_err(|err| {
+                        format!(
+                            "error asserting response from {} {} defined at line {}: {}",
+                            http_method, uri, test_response_line_number, err
+                        )
+                    });
+                match assert_response {
+                    Ok(_) => return Ok(()),
+                    Err(e) => {
+                        if i == test_response.retries.max_retries - 1 {
+                            return Err(e);
+                        }
+                        tokio::time::sleep(Duration::from_millis(test_response.retries.delay))
+                            .await;
+                        continue;
+                    }
+                }
+            }
+        }
+    }
+
+    Err("internal error executing request".to_string())
 }
 
 async fn assert_response(
     response: Response,
-    test_response: crate::domain::Response,
+    test_response: &crate::domain::Response,
     variables: &mut Variables,
 ) -> Result<(), String> {
     if test_response.code != response.status().as_u16() {
@@ -66,7 +94,7 @@ async fn assert_response(
             response.status().as_u16()
         ));
     }
-    for (key, val) in test_response.headers {
+    for (key, val) in test_response.headers.iter() {
         match response.headers().get(key.as_str()) {
             Some(test_val) => {
                 if test_val != val.as_str() {
@@ -81,7 +109,7 @@ async fn assert_response(
             None => return Err(format!("expected header {} not found", key)),
         }
     }
-    if let Some(test_body) = test_response.body {
+    if let Some(test_body) = test_response.body.as_ref() {
         let mut diff_config = Config::new(CompareMode::Strict);
         for path in test_response.ignore_paths.iter() {
             diff_config = diff_config.ignore_path(
@@ -95,6 +123,7 @@ async fn assert_response(
                     .map_err(|err| format!("invalid path {}: {}", order, err))?,
             );
         }
+
         let response_body = response.text().await.map_err(|e| e.to_string())?;
         let actual = &serde_json::from_str::<serde_json::Value>(response_body.as_str())
             .map_err(|err| format!("error parsing JSON response from the server: {}", err))?;
@@ -158,7 +187,7 @@ mod tests {
 
     use serde_json::json;
 
-    use crate::domain::{HttpMethod, Request, Response, TestCase};
+    use crate::domain::{HttpMethod, Request, Response, RetryPolicy, TestCase};
     use crate::executor::execute;
     use crate::json_diff::path::JSONPath;
     use crate::Variables;
@@ -204,6 +233,7 @@ mod tests {
                 body: Some(response_body.to_string()),
                 line_number: 2,
                 variables: HashMap::new(),
+                retries: RetryPolicy::default(),
             },
         };
 
@@ -270,6 +300,7 @@ mod tests {
                 body: Some(response_body.to_string()),
                 line_number: 2,
                 variables: response_variables,
+                retries: RetryPolicy::default(),
             },
         };
 
@@ -304,6 +335,7 @@ mod tests {
                 body: Some(response_body.to_string()),
                 line_number: 4,
                 variables: HashMap::new(),
+                retries: RetryPolicy::default(),
             },
         };
 

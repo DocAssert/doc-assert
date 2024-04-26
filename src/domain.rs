@@ -67,6 +67,21 @@ pub(crate) struct Request {
     pub line_number: usize,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct RetryPolicy {
+    pub max_retries: u64,
+    pub delay: u64,
+}
+
+impl Default for RetryPolicy {
+    fn default() -> Self {
+        RetryPolicy {
+            max_retries: 1,
+            delay: 0,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct Response {
     pub code: u16,
@@ -76,4 +91,5 @@ pub(crate) struct Response {
     pub body: Option<String>,
     pub line_number: usize,
     pub variables: HashMap<String, Path>,
+    pub retries: RetryPolicy,
 }

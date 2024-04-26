@@ -27,6 +27,8 @@ Content-Type: application/json
 
 [let name]: # ($.name)
 
+[retry]: # (3, 4500)
+
 Now let's add another user
 
 ```docassertrequest
