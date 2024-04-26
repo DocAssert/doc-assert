@@ -287,7 +287,7 @@ mod tests {
         );
         assert_eq!(
             test_cases[0].request.body.as_ref().unwrap(),
-            "{\"name\":\"test\"}"
+            "{\"name\": \"test\"}"
         );
         // response
         assert_eq!(test_cases[0].response.code, 201);
@@ -297,7 +297,7 @@ mod tests {
         );
         assert_eq!(
             test_cases[0].response.body.as_ref().unwrap(),
-            "{\"id\":1,\"name\":\"test\"}"
+            "{\"id\": 1,\"name\": \"test\"}"
         );
         assert_eq!(test_cases[0].response.ignore_paths[0], "$.id".to_string());
 
