@@ -14,10 +14,22 @@
 #[macro_use]
 extern crate rocket;
 
+use domain::FaultCounter;
+use rocket::serde::json::{json, Json, Value};
+
 mod admin;
 mod blog;
 mod comment;
 mod domain;
+
+#[get("/", format = "json")]
+async fn status(counter: domain::FaultState<'_>) -> Json<Value> {
+    let mut counter = counter.lock().await;
+    Json(json!({
+        "faulty": counter.is_faulty(),
+    }))
+}
+
 
 #[launch]
 fn rocket() -> _ {
@@ -25,4 +37,6 @@ fn rocket() -> _ {
         .attach(blog::stage())
         .attach(comment::stage())
         .attach(admin::stage())
+        .mount("/status", routes![status])
+        .manage(domain::FaultMtx::new(FaultCounter::new(5)))
 }

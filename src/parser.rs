@@ -18,7 +18,7 @@ use std::str::{FromStr, Lines};
 
 use regex::Regex;
 
-use crate::domain::{HttpMethod, Request, Response, TestCase};
+use crate::domain::{HttpMethod, Request, Response, RetryPolicy, TestCase};
 use crate::json_diff::path::{JSONPath, Path, JSON_PATH_REGEX};
 
 const DOC_ASSERT_REQUEST: &str = "```docassertrequest";
@@ -26,6 +26,7 @@ const DOC_ASSERT_RESPONSE: &str = "```docassertresponse";
 const IGNORE_PREFIX: &str = "[ignore]";
 const IGNORE_ORDER_PREFIX: &str = "[ignore-order]";
 const VARIABLE_PREFIX: &str = "[let ";
+const RETRY_PREFIX: &str = "[retry]";
 
 pub(crate) fn parse(path: String) -> Result<Vec<TestCase>, String> {
     let (mut requests, mut responses) = (vec![], vec![]);
@@ -81,6 +82,16 @@ pub(crate) fn parse(path: String) -> Result<Vec<TestCase>, String> {
             let l = responses.len();
             responses[l - 1].variables.insert(name, path);
         }
+
+        if line.starts_with(RETRY_PREFIX) {
+            if responses.is_empty() || responses.len() != requests.len() {
+                return Err(format!("misplaced retry at line {}: {}", line_no, line));
+            }
+            let retry_policy = get_retry_policy(line)?;
+
+            let l = responses.len();
+            responses[l - 1].retries = retry_policy;
+        }
     }
     if requests.len() != responses.len() {
         return Err(format!(
@@ -124,6 +135,30 @@ fn get_ignore_path(s: &str) -> Result<String, String> {
     }
 
     Ok(path)
+}
+
+fn get_retry_policy(s: &str) -> Result<RetryPolicy, String> {
+    let re = Regex::new(r"^\[retry\]:\s#\s\((?<max_retries>\d+),\s*(?<delay>\d+)\)").unwrap();
+
+    let caps = re
+        .captures(s)
+        .ok_or(format!("invalid retry properties: {}", s))?;
+
+    let max_retries = caps
+        .name("max_retries")
+        .ok_or(format!("invalid retry properties: {}", s))?
+        .as_str()
+        .parse::<u64>()
+        .map_err(|e| format!("invalid max_retries: {}", e))?;
+
+    let delay = caps
+        .name("delay")
+        .ok_or(format!("invalid retry properties: {}", s))?
+        .as_str()
+        .parse::<u64>()
+        .map_err(|e| format!("invalid delay: {}", e))?;
+
+    Ok(RetryPolicy { max_retries, delay })
 }
 
 fn get_variable_template(s: &str) -> Result<(String, Path), String> {
@@ -203,6 +238,7 @@ fn get_response(code_block_line_no: usize, code: String) -> Result<Response, Str
         body,
         line_number: code_block_line_no,
         variables: HashMap::new(),
+        retries: RetryPolicy::default(),
     })
 }
 
@@ -236,7 +272,7 @@ fn get_headers_and_body(
 
 #[cfg(test)]
 mod tests {
-    use crate::parser::parse;
+    use crate::{domain::RetryPolicy, parser::parse};
 
     #[test]
     fn test_parse() {
@@ -279,5 +315,13 @@ mod tests {
                 .to_string(),
             ".name".to_string()
         );
+
+        assert_eq!(
+            &test_cases[0].response.retries,
+            &RetryPolicy {
+                max_retries: 3,
+                delay: 4500
+            }
+        )
     }
 }

@@ -54,5 +54,32 @@ pub struct Tag {
     pub date_add: Option<DateTime<Utc>>,
 }
 
+pub struct FaultCounter {
+    max_count: u32,
+    pub count: u32,
+}
+
+impl FaultCounter {
+    pub fn new(max_count: u32) -> FaultCounter {
+        FaultCounter {
+            max_count,
+            count: 0,
+        }
+    }
+
+    pub fn is_faulty(&mut self) -> bool {
+        self.count += 1;
+        if self.count >= self.max_count {
+            self.count = 0;
+            true
+        } else {
+            false
+        }
+    }
+}
+
 pub type BlogMap = Mutex<HashMap<Uuid, BlogPost>>;
 pub type AllBlogs<'r> = &'r State<BlogMap>;
+
+pub type FaultMtx = Mutex<FaultCounter>;
+pub type FaultState<'r> = &'r State<FaultMtx>;
