@@ -187,21 +187,22 @@ doc-assert --url http://localhost:8081 --variables '{"auth_token": "some_token"}
 #### Retry policy
 
 In some cases, you may want to retry the request if it fails. You can define a retry policy in the documentation:
+
+~~~markdown
+```docassertrequest
+GET /blog/`id`
+```
+~~~
+
 ~~~markdown
 ```docassertresponse
 HTTP 200
 Content-Type: application/json
-{
-    "id": `id`,
-    "title": "My First Blog",
-    "body": "Blog content"
-}
 ```
 [retry]: # (3,4500)
 ~~~
 
 The first number in the retry policy is the number of retries, and the second number is the delay between retries in milliseconds.
-
 
 ## Installation
 
