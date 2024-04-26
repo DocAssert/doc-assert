@@ -259,17 +259,9 @@ fn get_headers_and_body(
             headers.insert(header_parts[0].to_string(), header_parts[1].to_string());
             continue;
         }
-        body.push_str(line);
+        body.push_str(line.trim());
     }
-    let body = if body.is_empty() {
-        None
-    } else {
-        Some(
-            body.chars()
-                .filter(|c| !c.is_whitespace())
-                .collect::<String>(),
-        )
-    };
+    let body = if body.is_empty() { None } else { Some(body) };
     Ok((headers, body))
 }
 
