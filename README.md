@@ -176,14 +176,6 @@ Content-Type: application/json
 
 Notice that `id` is also used in response and will be evaluated during assertions.
 
-### Using command line tool
-
-Instead of integrating DocAssert into your tests, you can also use it as a standalone command-line tool:
-
-```bash
-doc-assert --url http://localhost:8081 --variables '{"auth_token": "some_token"}' README.md
-```
-
 #### Retry policy
 
 In some cases, you may want to retry the request if it fails. You can define a retry policy in the documentation:
@@ -203,6 +195,14 @@ Content-Type: application/json
 ~~~
 
 The first number in the retry policy is the number of retries, and the second number is the delay between retries in milliseconds.
+
+### Using command line tool
+
+Instead of integrating DocAssert into your tests, you can also use it as a standalone command-line tool:
+
+```bash
+doc-assert --url http://localhost:8081 --variables '{"auth_token": "some_token"}' README.md
+```
 
 ## Installation
 
