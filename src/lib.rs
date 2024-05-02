@@ -19,9 +19,10 @@ use crate::{
     json_diff::path::{Key, Path},
 };
 use serde_json::Value;
-use std::collections::HashMap;
 use std::fmt::Display;
 use std::vec;
+use std::{collections::HashMap, iter::zip};
+use tokio::{sync::mpsc, sync::mpsc::Receiver};
 
 mod domain;
 mod executor;
@@ -156,6 +157,7 @@ impl<'a> DocAssert<'a> {
         let url = self.url.take().expect("URL is required");
         let mut total_count = 0;
         let mut failed_count = 0;
+
         let mut summary = String::new();
         let mut failures = String::new();
 
@@ -195,6 +197,61 @@ impl<'a> DocAssert<'a> {
             }))
         }
     }
+
+    pub async fn assert_stream(mut self) -> Result<AsyncReport, AssertionError> {
+        let url = self.url.take().expect("URL is required").to_string();
+
+        let test_cases_sets = self
+            .doc_paths
+            .iter()
+            .map(|doc_path| {
+                parser::parse(doc_path.to_string())
+                    .map_err(|e| AssertionError::ParsingError(e.clone()))
+            })
+            .collect::<Result<Vec<Vec<domain::TestCase>>, AssertionError>>()?;
+
+        let test_count = test_cases_sets.iter().fold(0, |acc, x| acc + x.len());
+
+        let doc_paths = self
+            .doc_paths
+            .iter()
+            .map(|p| p.to_string())
+            .collect::<Vec<String>>();
+
+        let mut variables = self.variables;
+
+        let (summary_tx, summary_rx) = mpsc::channel::<String>(test_count);
+        let (failures_tx, failures_rx) = mpsc::channel::<String>(test_count);
+
+        tokio::spawn(async move {
+            for (test_cases, doc_path) in zip(test_cases_sets, doc_paths) {
+                for tc in test_cases {
+                    let id = format!(
+                        "{} {} ({}:{})",
+                        tc.request.http_method, tc.request.uri, doc_path, tc.request.line_number
+                    );
+
+                    match executor::execute(&url, tc, &mut variables).await {
+                        Ok(_) => summary_tx.send(format!("{} ✅", id)).await.unwrap(),
+                        Err(err) => {
+                            summary_tx.send(format!("{} ❌", id)).await.unwrap();
+                            failures_tx
+                                .send(format!("-------------\n{}: {}", id, err))
+                                .await
+                                .unwrap();
+                        }
+                    }
+                }
+            }
+        });
+
+        Ok(AsyncReport {
+            total_count: test_count,
+            summary: summary_rx,
+            failures: failures_rx,
+            passed: None,
+        })
+    }
 }
 
 impl<'a> Default for DocAssert<'a> {
@@ -229,6 +286,53 @@ impl<'a> Default for DocAssert<'a> {
 ///         }
 ///     };
 /// }
+
+pub struct AsyncReport {
+    /// Total number of tests
+    pub total_count: usize,
+    /// Stream of summary messages
+    pub summary: Receiver<String>,
+    /// Stream of detailed information about the failed assertions
+    pub failures: Receiver<String>,
+    /// Determines if the test suite passed, only if all tests have been executed
+    pub passed: Option<bool>,
+}
+
+impl AsyncReport {
+    pub async fn process_and_log(&mut self) {
+        println!("{} tests", self.total_count);
+
+        while let Some(message) = self.summary.recv().await {
+            println!("{}", message);
+        }
+
+        let mut failed = 0;
+        while let Some(message) = self.failures.recv().await {
+            if failed == 0 {
+                println!("\nfailures:");
+            }
+
+            println!("{}", message);
+            failed += 1;
+        }
+
+        if failed > 0 {
+            println!(
+                "\ntest result: FAILED. {} passed; {} failed",
+                self.total_count - failed,
+                failed
+            );
+        } else {
+            println!(
+                "\ntest result: PASSED. {} passed; 0 failed",
+                self.total_count
+            );
+        }
+
+        self.passed = Some(failed == 0);
+    }
+}
+
 pub struct Report {
     /// Total number of tests
     total_count: usize,
@@ -305,7 +409,7 @@ pub enum AssertionError {
 /// let variables = Variables::from_json(&serde_json::from_str(json).unwrap()).unwrap();
 /// ```
 ///
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub struct Variables {
     map: HashMap<String, Value>,
 }
