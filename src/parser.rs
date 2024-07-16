@@ -19,7 +19,7 @@ use std::str::{FromStr, Lines};
 use regex::Regex;
 
 use crate::domain::{HttpMethod, Request, Response, RetryPolicy, TestCase};
-use crate::json_diff::path::{JSONPath, Path, JSON_PATH_REGEX};
+use crate::json_diff::path::{JSONPath, Path};
 
 const DOC_ASSERT_REQUEST: &str = "```docassertrequest";
 const DOC_ASSERT_RESPONSE: &str = "```docassertresponse";
