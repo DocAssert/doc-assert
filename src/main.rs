@@ -133,12 +133,20 @@ async fn main() {
         doc_assert = doc_assert.with_doc_path(file);
     }
 
-    let result = doc_assert.assert().await;
-
+    let result = doc_assert.assert_stream().await;
     match result {
-        Ok(report) => {
-            println!("{}", report);
-            std::process::exit(Code::SUCCESS);
+        Ok(mut report) => {
+            report.process_and_log().await;
+            match report.passed {
+                Some(passed) => {
+                    if !passed {
+                        std::process::exit(Code::DOC_ASSERTION_ERROR);
+                    }
+                }
+                None => {
+                    std::process::exit(Code::INTERNAL_ERROR);
+                }
+            }
         }
         Err(err) => match err {
             AssertionError::ParsingError(err) => {
