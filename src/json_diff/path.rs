@@ -116,11 +116,7 @@ impl Path {
 
         let mut keys = Vec::new();
 
-        for segment in jsonpath
-            .trim_matches('$')
-            .split(|c| c == '.' || c == '[')
-            .skip(1)
-        {
+        for segment in jsonpath.trim_matches('$').split(['.', '[']).skip(1) {
             keys.push(Self::parse_token(segment)?);
         }
 

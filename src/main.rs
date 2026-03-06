@@ -72,7 +72,6 @@ struct Code;
 
 impl Code {
     const SUCCESS: i32 = 0;
-    const INTERNAL_ERROR: i32 = 1;
     const INVALID_ARGUMENT: i32 = 2;
     const DOC_PARSING_ERROR: i32 = 3;
     const DOC_ASSERTION_ERROR: i32 = 4;
