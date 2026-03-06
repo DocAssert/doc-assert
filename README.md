@@ -3,6 +3,7 @@
 
 **DocAssert** is a documentation testing tool that offers a completely new approach.
 Write your documentation as a story you want to tell your users and test it against your API.
+It can be really usefule for AI assited development when you want to provide more context for your agent.
 
 
 ## How it works?
@@ -203,6 +204,17 @@ Instead of integrating DocAssert into your tests, you can also use it as a stand
 ```bash
 doc-assert --url http://localhost:8081 --variables '{"auth_token": "some_token"}' README.md
 ```
+
+### Using DocAssert for AI-assisted development
+
+DocAssert is a good fit for AI-assisted workflows where an agent updates API docs and code in the same task.
+After AI-generated changes, run DocAssert to verify that examples in your `README.md` still match real API behavior.
+
+It can also be included in AI "skills" or reusable task templates, for example:
+
+- add a step like `doc-assert --url http://localhost:8081 README.md` to your skill's verification checklist
+- require DocAssert to pass before accepting AI-generated documentation updates
+- run DocAssert in CI for PRs created by AI agents, so docs and API behavior stay aligned
 
 ## Installation
 
