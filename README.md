@@ -204,6 +204,17 @@ Instead of integrating DocAssert into your tests, you can also use it as a stand
 doc-assert --url http://localhost:8081 --variables '{"auth_token": "some_token"}' README.md
 ```
 
+### Using DocAssert for AI-assisted development
+
+DocAssert is a good fit for AI-assisted workflows where an agent updates API docs and code in the same task.
+After AI-generated changes, run DocAssert to verify that examples in your `README.md` still match real API behavior.
+
+It can also be included in AI "skills" or reusable task templates, for example:
+
+- add a step like `doc-assert --url http://localhost:8081 README.md` to your skill's verification checklist
+- require DocAssert to pass before accepting AI-generated documentation updates
+- run DocAssert in CI for PRs created by AI agents, so docs and API behavior stay aligned
+
 ## Installation
 
 To use DocAssert as a CLI tool you can install it using cargo:
