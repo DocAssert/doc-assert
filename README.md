@@ -3,6 +3,7 @@
 
 **DocAssert** is a documentation testing tool that offers a completely new approach.
 Write your documentation as a story you want to tell your users and test it against your API.
+It can be really usefule for AI assited development when you want to provide more context for your agent.
 
 
 ## How it works?
