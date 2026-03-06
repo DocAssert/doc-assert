@@ -118,7 +118,7 @@ impl Path {
 
         for segment in jsonpath
             .trim_matches('$')
-            .split(|c| c == '.' || c == '[')
+            .split(['.', '['])
             .skip(1)
         {
             keys.push(Self::parse_token(segment)?);
