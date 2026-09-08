@@ -12,7 +12,7 @@ Content-Type: application/json
 And as a response we should get something like this
 
 ```docassertresponse
-HTTP 200
+HTTP 201
 Content-Type: application/json
 {
     "id": 1,
@@ -60,7 +60,7 @@ Content-Type: application/json
 With expected response
 
 ```docassertresponse
-HTTP 200
+HTTP 201
 Content-Type: application/json
 {
     "id": 1,
