@@ -201,7 +201,7 @@ mod tests {
         let request_body_template = "{\"name\":`name`}";
         let response_body = "{\"id\": 1, \"name\": \"John\"}";
         let response_status = 201;
-        let mut server = mockito::Server::new();
+        let mut server = mockito::Server::new_async().await;
         server
             .mock("POST", users_endpoint)
             .match_header(header_name, header_value)
@@ -211,7 +211,8 @@ mod tests {
             .with_header(header_name, header_value)
             .with_status(response_status)
             .with_body(response_body)
-            .create();
+            .create_async()
+            .await;
 
         let test_case = TestCase {
             request: Request {
@@ -257,7 +258,7 @@ mod tests {
         let request_body_template = "{\"name\":`name`}";
         let response_body = "{\"id\": 1, \"name\": \"John\"}";
         let response_status = 201;
-        let mut server = mockito::Server::new();
+        let mut server = mockito::Server::new_async().await;
         server
             .mock("POST", users_endpoint)
             .match_header(header_name, header_value)
@@ -267,7 +268,8 @@ mod tests {
             .with_header(header_name, header_value)
             .with_status(response_status)
             .with_body(response_body)
-            .create();
+            .create_async()
+            .await;
 
         server
             .mock("GET", "/users/1")
@@ -275,7 +277,8 @@ mod tests {
             .with_header(header_name, header_value)
             .with_status(200)
             .with_body(response_body)
-            .create();
+            .create_async()
+            .await;
 
         let mut response_variables = HashMap::new();
         response_variables.insert("id".to_string(), "$.id".jsonpath().unwrap());
