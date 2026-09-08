@@ -2,5 +2,4 @@
 .vscode/
 .DS_Store
 .idea/
-
-tests/functional/backend.log
+tests/sample-api/backend.log
