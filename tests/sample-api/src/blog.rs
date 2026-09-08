@@ -13,7 +13,7 @@
 
 use std::collections::HashMap;
 
-use crate::domain::{AllBlogs, BlogMap, BlogPost, FaultCounter, FaultState};
+use crate::domain::{AllBlogs, BlogMap, BlogPost};
 use rocket::response::status::Created;
 use rocket::serde::json::{json, Json, Value};
 use rocket::serde::uuid::Uuid;
