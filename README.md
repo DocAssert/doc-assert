@@ -85,6 +85,64 @@ mod tests {
 
 In case of `Err` the result will contain a list of errors with detailed information about what went wrong.
 
+#### Reporting progress
+
+The `Report` is only returned once every test case has been executed. To see the results while the suite is
+still running, register a reporter. `StdoutReporter` prints every test case as soon as it has been executed,
+followed by the details of the failures and the final result:
+
+```rust
+use doc_assert::DocAssert;
+use doc_assert::StdoutReporter;
+
+#[cfg(test)]
+mod tests {
+    #[tokio::test]
+    async fn test_docs() {
+        let result = DocAssert::new()
+            .with_url("http://localhost:8080")
+            .with_doc_path("README.md")
+            .with_reporter(StdoutReporter::new())
+            .assert()
+            .await;
+    }
+}
+```
+
+```text
+2 tests
+GET /blog (README.md:12) ✅
+POST /blog (README.md:30) ❌
+
+failures:
+-------------
+POST /blog (README.md:30): expected response code 201, got 500
+
+test result: FAILED. 1 passed; 1 failed
+```
+
+This is what the `doc-assert` binary does, so its output now appears as the test cases are executed instead of
+all at once at the end of the run.
+
+Implement the `Reporter` trait to handle the events yourself, for instance to feed another test runner or to
+collect metrics. All of its methods have an empty default implementation, so only the ones of interest need to
+be implemented:
+
+```rust
+use doc_assert::{Reporter, TestCaseId};
+
+#[derive(Default)]
+struct FailedTestCases(Vec<String>);
+
+impl Reporter for FailedTestCases {
+    fn test_case_finished(&mut self, id: &TestCaseId, result: &Result<(), String>) {
+        if result.is_err() {
+            self.0.push(id.to_string());
+        }
+    }
+}
+```
+
 #### Variables
 
 In some case we may need to set some value which will be shared between requests. For instance test auth token.

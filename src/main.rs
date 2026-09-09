@@ -20,6 +20,7 @@ use serde_json::Value;
 
 use doc_assert::AssertionError;
 use doc_assert::DocAssert;
+use doc_assert::StdoutReporter;
 use doc_assert::Variables;
 
 #[doc(hidden)]
@@ -122,7 +123,8 @@ async fn main() {
 
     let mut doc_assert = DocAssert::new()
         .with_url(cli.url.as_str())
-        .with_variables(variables);
+        .with_variables(variables)
+        .with_reporter(StdoutReporter::new());
 
     for file in cli.files.iter() {
         let Some(file) = file.to_str() else {
@@ -134,17 +136,18 @@ async fn main() {
 
     let result = doc_assert.assert().await;
 
+    // the report has already been printed by `StdoutReporter` while the test cases
+    // were being executed, only the exit code is left to be set here
     match result {
-        Ok(report) => {
-            println!("{}", report);
+        Ok(_) => {
             std::process::exit(Code::SUCCESS);
         }
         Err(err) => match err {
             AssertionError::ParsingError(err) => {
                 handle_error!(Code::DOC_PARSING_ERROR, "Error parsing file: {}", err);
             }
-            AssertionError::TestSuiteError(report) => {
-                handle_error!(Code::DOC_ASSERTION_ERROR, "{}", report);
+            AssertionError::TestSuiteError(_) => {
+                std::process::exit(Code::DOC_ASSERTION_ERROR);
             }
         },
     }
