@@ -21,124 +21,125 @@ use reqwest::{Body, Client, Method, Response};
 use crate::domain::{HttpMethod, Request, TestCase};
 use crate::json_diff::path::Path;
 use crate::json_diff::{diff, CompareMode, Config};
+use crate::report::{Failure, Mismatch};
 use crate::Variables;
 
 pub(crate) async fn execute(
     base_url: &str,
     test_case: TestCase,
     variables: &mut Variables,
-) -> Result<(), String> {
+) -> Result<(), Failure> {
     let mut test_request = test_case.request;
     variables.replace_request_placeholders(&mut test_request)?;
 
-    let test_request_line_number = test_request.line_number;
-    let http_method = &test_request.http_method;
-    let uri = &test_request.uri;
-
     let mut test_response = test_case.response;
     variables.replace_response_placeholders(&mut test_response)?;
-    let test_response_line_number: usize = test_response.line_number;
+
+    let http_method = test_request.http_method.to_string();
+    let uri = test_request.uri.clone();
+    let request_line_number = test_request.line_number;
+    let response_line_number = test_response.line_number;
 
     for i in 0..test_response.retries.max_retries {
-        let response = get_response(base_url, &test_request).await.map_err(|err| {
-            format!(
-                "error executing request {} {} defined at line {}: {}",
-                http_method, uri, test_request_line_number, err
-            )
-        });
+        let last_attempt = i == test_response.retries.max_retries - 1;
 
-        match response {
-            Err(e) => {
-                if i == test_response.retries.max_retries - 1 {
-                    return Err(e);
-                }
-                tokio::time::sleep(Duration::from_millis(test_response.retries.delay)).await;
-                continue;
-            }
-            Ok(response) => {
-                let assert_response = assert_response(response, &test_response, variables)
-                    .await
-                    .map_err(|err| {
-                        format!(
-                            "error asserting response from {} {} defined at line {}: {}",
-                            http_method, uri, test_response_line_number, err
-                        )
-                    });
-                match assert_response {
-                    Ok(_) => return Ok(()),
-                    Err(e) => {
-                        if i == test_response.retries.max_retries - 1 {
-                            return Err(e);
-                        }
-                        tokio::time::sleep(Duration::from_millis(test_response.retries.delay))
-                            .await;
-                        continue;
-                    }
-                }
-            }
+        let failure = match get_response(base_url, &test_request).await {
+            Err(reason) => Failure::RequestFailed {
+                http_method: http_method.clone(),
+                uri: uri.clone(),
+                line_number: request_line_number,
+                reason,
+            },
+            Ok(response) => match assert_response(response, &test_response, variables).await {
+                Ok(_) => return Ok(()),
+                Err(cause) => Failure::ResponseMismatch {
+                    http_method: http_method.clone(),
+                    uri: uri.clone(),
+                    line_number: response_line_number,
+                    cause,
+                },
+            },
+        };
+
+        if last_attempt {
+            return Err(failure);
         }
+        tokio::time::sleep(Duration::from_millis(test_response.retries.delay)).await;
     }
 
-    Err("internal error executing request".to_string())
+    Err(Failure::NotExecuted)
 }
 
 async fn assert_response(
     response: Response,
     test_response: &crate::domain::Response,
     variables: &mut Variables,
-) -> Result<(), String> {
+) -> Result<(), Mismatch> {
     if test_response.code != response.status().as_u16() {
-        return Err(format!(
-            "expected response code {}, got {}",
-            test_response.code,
-            response.status().as_u16()
-        ));
+        return Err(Mismatch::StatusCode {
+            expected: test_response.code,
+            actual: response.status().as_u16(),
+        });
     }
     for (key, val) in test_response.headers.iter() {
         match response.headers().get(key.as_str()) {
             Some(test_val) => {
                 if test_val != val.as_str() {
-                    return Err(format!(
-                        "expected header {} to be {}, got {}",
-                        key,
-                        val,
-                        test_val.to_str().unwrap()
-                    ));
+                    return Err(Mismatch::Header {
+                        name: key.clone(),
+                        expected: val.clone(),
+                        actual: test_val.to_str().unwrap().to_string(),
+                    });
                 }
             }
-            None => return Err(format!("expected header {} not found", key)),
+            None => return Err(Mismatch::MissingHeader { name: key.clone() }),
         }
     }
     if let Some(test_body) = test_response.body.as_ref() {
         let mut diff_config = Config::new(CompareMode::Strict);
         for path in test_response.ignore_paths.iter() {
-            diff_config = diff_config.ignore_path(
-                Path::from_jsonpath(path.as_str())
-                    .map_err(|err| format!("invalid path {}: {}", path, err))?,
-            );
+            diff_config =
+                diff_config.ignore_path(Path::from_jsonpath(path.as_str()).map_err(|err| {
+                    Mismatch::InvalidIgnorePath {
+                        path: path.clone(),
+                        reason: err.to_string(),
+                    }
+                })?);
         }
         for order in test_response.ignore_orders.iter() {
-            diff_config = diff_config.ignore_order(
-                Path::from_jsonpath(order.as_str())
-                    .map_err(|err| format!("invalid path {}: {}", order, err))?,
-            );
+            diff_config =
+                diff_config.ignore_order(Path::from_jsonpath(order.as_str()).map_err(|err| {
+                    Mismatch::InvalidIgnorePath {
+                        path: order.clone(),
+                        reason: err.to_string(),
+                    }
+                })?);
         }
 
-        let response_body = response.text().await.map_err(|e| e.to_string())?;
-        let actual = &serde_json::from_str::<serde_json::Value>(response_body.as_str())
-            .map_err(|err| format!("error parsing JSON response from the server: {}", err))?;
-        let expected = &serde_json::from_str::<serde_json::Value>(test_body.as_str())
-            .map_err(|err| format!("error parsing JSON: {}", err))?;
+        let response_body =
+            response
+                .text()
+                .await
+                .map_err(|err| Mismatch::UnreadableResponseBody {
+                    reason: err.to_string(),
+                })?;
+        let actual =
+            &serde_json::from_str::<serde_json::Value>(response_body.as_str()).map_err(|err| {
+                Mismatch::MalformedResponseBody {
+                    reason: err.to_string(),
+                }
+            })?;
+        let expected =
+            &serde_json::from_str::<serde_json::Value>(test_body.as_str()).map_err(|err| {
+                Mismatch::MalformedExpectedBody {
+                    reason: err.to_string(),
+                }
+            })?;
         let diff_result = diff(expected, actual, diff_config);
         if !diff_result.is_empty() {
-            return Err(format!(
-                "expected response differs from actual {}",
-                diff_result
-                    .iter()
-                    .map(|d| d.to_string())
-                    .collect::<Vec<String>>()
-                    .join("\n"),
-            ));
+            return Err(Mismatch::Body {
+                differences: diff_result.iter().map(|d| d.to_string()).collect(),
+            });
         }
 
         if !test_response.variables.is_empty() {
@@ -242,11 +243,7 @@ mod tests {
 
         let result = execute(server.url().as_str(), test_case, &mut variables).await;
 
-        match result {
-            Ok(_) => {}
-            Err(ref err) => assert_eq!("", err),
-        }
-        assert!(result.is_ok());
+        assert_eq!(Ok(()), result);
     }
 
     #[tokio::test]
@@ -309,14 +306,9 @@ mod tests {
 
         let mut variables = Variables::from_json(&json!({"name":"John"})).unwrap();
 
-        let result: Result<(), String> =
-            execute(server.url().as_str(), test_case, &mut variables).await;
+        let result = execute(server.url().as_str(), test_case, &mut variables).await;
 
-        match result {
-            Ok(_) => {}
-            Err(ref err) => assert_eq!("", err),
-        }
-        assert!(result.is_ok());
+        assert_eq!(Ok(()), result);
 
         let test_case = TestCase {
             request: Request {
@@ -342,8 +334,7 @@ mod tests {
             },
         };
 
-        let result: Result<(), String> =
-            execute(server.url().as_str(), test_case, &mut variables).await;
+        let result = execute(server.url().as_str(), test_case, &mut variables).await;
 
         assert_eq!(Ok(()), result);
     }

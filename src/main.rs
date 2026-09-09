@@ -18,9 +18,8 @@ use std::str::FromStr;
 use clap::Parser;
 use serde_json::Value;
 
-use doc_assert::AssertionError;
 use doc_assert::DocAssert;
-use doc_assert::StdoutReporter;
+use doc_assert::Error;
 use doc_assert::Variables;
 
 #[doc(hidden)]
@@ -123,8 +122,7 @@ async fn main() {
 
     let mut doc_assert = DocAssert::new()
         .with_url(cli.url.as_str())
-        .with_variables(variables)
-        .with_reporter(StdoutReporter::new());
+        .with_variables(variables);
 
     for file in cli.files.iter() {
         let Some(file) = file.to_str() else {
@@ -134,21 +132,28 @@ async fn main() {
         doc_assert = doc_assert.with_doc_path(file);
     }
 
-    let result = doc_assert.assert().await;
-
-    // the report has already been printed by `StdoutReporter` while the test cases
-    // were being executed, only the exit code is left to be set here
-    match result {
-        Ok(_) => {
-            std::process::exit(Code::SUCCESS);
+    let mut run = match doc_assert.start() {
+        Ok(run) => run,
+        Err(err @ (Error::NoUrl | Error::NoDocuments)) => {
+            handle_error!(Code::INVALID_ARGUMENT, "Error: {}", err);
         }
-        Err(err) => match err {
-            AssertionError::ParsingError(err) => {
-                handle_error!(Code::DOC_PARSING_ERROR, "Error parsing file: {}", err);
-            }
-            AssertionError::TestSuiteError(_) => {
-                std::process::exit(Code::DOC_ASSERTION_ERROR);
-            }
-        },
+        Err(err) => {
+            handle_error!(Code::DOC_PARSING_ERROR, "Error: {}", err);
+        }
+    };
+
+    // the test cases are printed as they are executed, only the failures and the final
+    // result are left to print once the run is over
+    println!("{} tests", run.total_count());
+    while let Some(result) = run.next().await {
+        println!("{}", result);
     }
+
+    let report = run.finish();
+    println!("{}", report.verdict());
+
+    if report.passed() {
+        std::process::exit(Code::SUCCESS);
+    }
+    std::process::exit(Code::DOC_ASSERTION_ERROR);
 }

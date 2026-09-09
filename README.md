@@ -66,48 +66,65 @@ use doc_assert::DocAssert;
 mod tests {
     #[tokio::test]
     async fn test_docs() {
-        let result = DocAssert::new()
+        DocAssert::new()
             .with_url("http://localhost:8080")
             .with_doc_path("README.md")
             .assert()
             .await;
-        match result {
-            Ok(report) => {
-                // handle report
-            }
-            Err(err) => {
-                // handle error
-            }
-        }
     }
 }
 ```
 
-In case of `Err` the result will contain a list of errors with detailed information about what went wrong.
-
-#### Reporting progress
-
-The `Report` is only returned once every test case has been executed. To see the results while the suite is
-still running, register a reporter. `StdoutReporter` prints every test case as soon as it has been executed,
-followed by the details of the failures and the final result:
+`assert` fails the test if anything went wrong, printing the whole report. If you would rather handle the
+outcome yourself, `run` hands it back instead:
 
 ```rust
-use doc_assert::DocAssert;
-use doc_assert::StdoutReporter;
+# use doc_assert::DocAssert;
+# async fn test() {
+let report = DocAssert::new()
+    .with_url("http://localhost:8080")
+    .with_doc_path("README.md")
+    .run()
+    .await
+    .unwrap();
 
-#[cfg(test)]
-mod tests {
-    #[tokio::test]
-    async fn test_docs() {
-        let result = DocAssert::new()
-            .with_url("http://localhost:8080")
-            .with_doc_path("README.md")
-            .with_reporter(StdoutReporter::new())
-            .assert()
-            .await;
-    }
+println!("{} of {} passed", report.passed_count(), report.total_count());
+for result in report.failures() {
+    println!("{} failed: {}", result.id(), result.failure().unwrap());
 }
+# }
 ```
+
+`run` returns `Err` only when the run could not be performed at all, for instance because a documentation file
+could not be parsed. Test cases that failed are not an error: a run that executed its test cases always
+returns a `Report`, and `Report::passed` is the verdict.
+
+#### Seeing the results as they happen
+
+`assert` returns only once every test case has been executed. To handle the results while the run is still
+going on, drive it yourself with `start`, which parses the documentation and hands back a `Run`:
+
+```rust
+# use doc_assert::DocAssert;
+# async fn test() {
+let mut run = DocAssert::new()
+    .with_url("http://localhost:8080")
+    .with_doc_path("README.md")
+    .start()
+    .unwrap();
+
+println!("{} tests", run.total_count());
+while let Some(result) = run.next().await {
+    println!("{}", result);
+}
+
+let report = run.finish();
+println!("{}", report.verdict());
+# }
+```
+
+This is what the `doc-assert` binary does, so its output appears as the test cases are executed rather than
+all at once at the end of the run:
 
 ```text
 2 tests
@@ -116,30 +133,40 @@ POST /blog (README.md:30) ❌
 
 failures:
 -------------
-POST /blog (README.md:30): expected response code 201, got 500
+POST /blog (README.md:30): error asserting response from POST /blog defined at line 36: expected response code 201, got 500
 
 test result: FAILED. 1 passed; 1 failed
 ```
 
-This is what the `doc-assert` binary does, so its output now appears as the test cases are executed instead of
-all at once at the end of the run.
-
-Implement the `Reporter` trait to handle the events yourself, for instance to feed another test runner or to
-collect metrics. All of its methods have an empty default implementation, so only the ones of interest need to
-be implemented:
+Because you own the loop you can also stop early, time each test case, or race the run against a timeout:
 
 ```rust
-use doc_assert::{Reporter, TestCaseId};
-
-#[derive(Default)]
-struct FailedTestCases(Vec<String>);
-
-impl Reporter for FailedTestCases {
-    fn test_case_finished(&mut self, id: &TestCaseId, result: &Result<(), String>) {
-        if result.is_err() {
-            self.0.push(id.to_string());
-        }
+# use doc_assert::DocAssert;
+# async fn test() {
+# let mut run = DocAssert::new().with_url("http://localhost:8080").with_doc_path("README.md").start().unwrap();
+while let Some(result) = run.next().await {
+    if !result.passed() {
+        break; // fail fast
     }
+}
+let report = run.finish(); // the test cases executed so far
+# }
+```
+
+A failure is a `Failure`, not a string, so you can render your own output — JUnit XML, TAP, JSON — by
+matching on it:
+
+```rust
+use doc_assert::{Failure, Mismatch};
+
+fn is_server_error(failure: &Failure) -> bool {
+    matches!(
+        failure,
+        Failure::ResponseMismatch {
+            cause: Mismatch::StatusCode { actual: 500..=599, .. },
+            ..
+        }
+    )
 }
 ```
 
@@ -150,26 +177,21 @@ In some case we may need to set some value which will be shared between requests
 We can define variable in the API before we run the tests:
 
 ```rust
-use doc_assert::DocAssert;
+use doc_assert::{DocAssert, Variables};
 
 #[cfg(test)]
 mod tests {
     #[tokio::test]
     async fn test_docs() {
-        let result = DocAssert::new()
+        let mut variables = Variables::new();
+        variables.insert("auth_token", "some_token");
+
+        DocAssert::new()
             .with_url("http://localhost:8080")
             .with_doc_path("README.md")
-            .with_variable("auth_token", "some_token")
+            .with_variables(variables)
             .assert()
             .await;
-        match result {
-            Ok(report) => {
-                // handle report
-            }
-            Err(err) => {
-                // handle error
-            }
-        }
     }
 }
 ```
