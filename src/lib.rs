@@ -13,10 +13,6 @@
 
 #![doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"))]
 #![allow(clippy::while_let_on_iterator)]
-// `Failure` describes what went wrong in detail, which makes it larger than the lint likes.
-// It is produced at most once per test case, next to an HTTP round trip, so its size is
-// irrelevant here and worth the detail it carries.
-#![allow(clippy::result_large_err)]
 
 use crate::{
     domain::{Request, Response, TestCase},
@@ -32,7 +28,7 @@ mod json_diff;
 mod parser;
 mod report;
 
-pub use report::{Failure, Mismatch, Report, TestCaseId, TestCaseResult, Verdict};
+pub use report::{Failure, Mismatch, Report, Summary, TestCaseId, TestCaseResult};
 
 /// Builder for a documentation test run.
 ///
@@ -173,7 +169,7 @@ impl DocAssert {
     ///         .await
     ///         .unwrap();
     ///
-    ///     println!("{} of {} passed", report.passed_count(), report.total_count());
+    ///     println!("{} of {} passed", report.passed_count(), report.executed_count());
     /// }
     /// ```
     pub async fn run(self) -> Result<Report, Error> {
@@ -203,7 +199,7 @@ impl DocAssert {
     ///     }
     ///
     ///     let report = run.finish();
-    ///     println!("{}", report.verdict());
+    ///     println!("{}", report.summary());
     /// }
     /// ```
     pub fn start(self) -> Result<Run, Error> {
@@ -221,12 +217,12 @@ impl DocAssert {
                 reason,
             })?;
             for test_case in test_cases {
-                let id = TestCaseId {
-                    http_method: test_case.request.http_method.to_string(),
-                    uri: test_case.request.uri.clone(),
-                    doc_path: doc_path.clone(),
-                    line_number: test_case.request.line_number,
-                };
+                let id = TestCaseId::new(
+                    test_case.request.http_method.to_string(),
+                    test_case.request.uri.clone(),
+                    doc_path.clone(),
+                    test_case.request.line_number,
+                );
                 pending.push((id, test_case));
             }
         }
@@ -260,7 +256,10 @@ pub struct Run {
 }
 
 impl Run {
-    /// Total number of test cases in the run
+    /// Total number of test cases the documentation defines.
+    ///
+    /// This is how many test cases the run would execute if it were driven to the end;
+    /// a run that is stopped early reports fewer, see [`Report::executed_count`].
     pub fn total_count(&self) -> usize {
         self.total_count
     }
@@ -271,6 +270,13 @@ impl Run {
     }
 
     /// Executes the next test case, `None` once every one of them has been executed.
+    ///
+    /// # Cancellation
+    ///
+    /// This is not cancellation safe. The test case is taken off the queue before the
+    /// request is sent, so dropping the returned future part way through — racing it
+    /// against a timeout, or selecting on it — loses that test case: it is neither
+    /// retried nor reported. Drive it to completion, and stop the run between calls.
     pub async fn next(&mut self) -> Option<TestCaseResult> {
         let (id, test_case) = self.pending.next()?;
         let failure = executor::execute(&self.url, test_case, &mut self.variables)
@@ -310,6 +316,8 @@ pub enum Error {
         /// Why it could not be read or parsed
         reason: String,
     },
+    /// The variables were not given as a JSON object
+    VariablesNotAnObject,
 }
 
 impl Display for Error {
@@ -320,6 +328,7 @@ impl Display for Error {
             Error::Parse { doc_path, reason } => {
                 write!(f, "error parsing {}: {}", doc_path, reason)
             }
+            Error::VariablesNotAnObject => write!(f, "variables must be a JSON object"),
         }
     }
 }
@@ -378,12 +387,12 @@ impl Variables {
     /// let json = r#"{"name": "John", "age": 30}"#;
     /// let variables = Variables::from_json(&serde_json::from_str(json).unwrap()).unwrap();
     /// ```
-    pub fn from_json(json: &Value) -> Result<Self, String> {
+    pub fn from_json(json: &Value) -> Result<Self, Error> {
         match json {
             Value::Object(obj) => Ok(Self {
                 map: obj.clone().into_iter().collect(),
             }),
-            _ => Err("variables must be an object".to_string()),
+            _ => Err(Error::VariablesNotAnObject),
         }
     }
 
@@ -573,19 +582,19 @@ mod tests {
 
         let first = run.next().await.unwrap();
         assert!(first.passed());
-        assert_eq!("GET", first.id().http_method);
-        assert_eq!("/passing", first.id().uri);
+        assert_eq!("GET", first.id().http_method());
+        assert_eq!("/passing", first.id().uri());
         // the second test case has not been executed at the point the first is returned
         assert_eq!(1, run.completed_count());
 
         let second = run.next().await.unwrap();
         assert!(!second.passed());
-        assert_eq!("/failing", second.id().uri);
+        assert_eq!("/failing", second.id().uri());
 
         assert!(run.next().await.is_none());
 
         let report = run.finish();
-        assert_eq!(2, report.total_count());
+        assert_eq!(2, report.executed_count());
         assert_eq!(1, report.passed_count());
         assert_eq!(1, report.failed_count());
         assert!(!report.passed());
@@ -632,7 +641,7 @@ mod tests {
         let report = run.finish();
 
         // only the test cases that were executed are reported
-        assert_eq!(1, report.total_count());
+        assert_eq!(1, report.executed_count());
         assert!(report.passed());
     }
 
@@ -673,36 +682,42 @@ mod tests {
     fn test_report_renders_the_same_thing_as_the_streamed_output() {
         let report = crate::Report::new(vec![
             crate::TestCaseResult::new(
-                crate::TestCaseId {
-                    http_method: "GET".to_string(),
-                    uri: "/blog".to_string(),
-                    doc_path: "README.md".to_string(),
-                    line_number: 12,
-                },
+                crate::TestCaseId::new(
+                    "GET".to_string(),
+                    "/blog".to_string(),
+                    "README.md".to_string(),
+                    12,
+                ),
                 None,
             ),
             crate::TestCaseResult::new(
-                crate::TestCaseId {
-                    http_method: "POST".to_string(),
-                    uri: "/blog".to_string(),
-                    doc_path: "README.md".to_string(),
-                    line_number: 30,
-                },
-                Some(Failure::NotExecuted),
+                crate::TestCaseId::new(
+                    "POST".to_string(),
+                    "/blog".to_string(),
+                    "README.md".to_string(),
+                    30,
+                ),
+                Some(Failure::ResponseMismatch {
+                    line_number: 36,
+                    cause: Mismatch::StatusCode {
+                        expected: 201,
+                        actual: 500,
+                    },
+                }),
             ),
         ]);
 
         // what the binary prints line by line has to add up to what `Report` displays
         let streamed = format!(
             "{} tests\n{}\n{}\n",
-            report.total_count(),
+            report.executed_count(),
             report
                 .results()
                 .iter()
                 .map(|r| r.to_string())
                 .collect::<Vec<String>>()
                 .join("\n"),
-            report.verdict()
+            report.summary()
         );
         assert_eq!(format!("{}\n", report), streamed);
     }

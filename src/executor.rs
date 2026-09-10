@@ -35,39 +35,30 @@ pub(crate) async fn execute(
     let mut test_response = test_case.response;
     variables.replace_response_placeholders(&mut test_response)?;
 
-    let http_method = test_request.http_method.to_string();
-    let uri = test_request.uri.clone();
-    let request_line_number = test_request.line_number;
     let response_line_number = test_response.line_number;
 
-    for i in 0..test_response.retries.max_retries {
-        let last_attempt = i == test_response.retries.max_retries - 1;
+    let mut attempt = 0;
+    loop {
+        attempt += 1;
 
         let failure = match get_response(base_url, &test_request).await {
-            Err(reason) => Failure::RequestFailed {
-                http_method: http_method.clone(),
-                uri: uri.clone(),
-                line_number: request_line_number,
-                reason,
-            },
+            Err(reason) => Failure::RequestFailed { reason },
             Ok(response) => match assert_response(response, &test_response, variables).await {
                 Ok(_) => return Ok(()),
                 Err(cause) => Failure::ResponseMismatch {
-                    http_method: http_method.clone(),
-                    uri: uri.clone(),
                     line_number: response_line_number,
                     cause,
                 },
             },
         };
 
-        if last_attempt {
+        // the policy counts attempts rather than extra tries, and the parser rejects one
+        // that allows none, so the request is always attempted at least once
+        if attempt >= test_response.retries.max_retries {
             return Err(failure);
         }
         tokio::time::sleep(Duration::from_millis(test_response.retries.delay)).await;
     }
-
-    Err(Failure::NotExecuted)
 }
 
 async fn assert_response(

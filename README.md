@@ -88,7 +88,7 @@ let report = DocAssert::new()
     .await
     .unwrap();
 
-println!("{} of {} passed", report.passed_count(), report.total_count());
+println!("{} of {} passed", report.passed_count(), report.executed_count());
 for result in report.failures() {
     println!("{} failed: {}", result.id(), result.failure().unwrap());
 }
@@ -119,7 +119,7 @@ while let Some(result) = run.next().await {
 }
 
 let report = run.finish();
-println!("{}", report.verdict());
+println!("{}", report.summary());
 # }
 ```
 
@@ -133,12 +133,14 @@ POST /blog (README.md:30) ❌
 
 failures:
 -------------
-POST /blog (README.md:30): error asserting response from POST /blog defined at line 36: expected response code 201, got 500
+POST /blog (README.md:30): response at line 36: expected response code 201, got 500
 
 test result: FAILED. 1 passed; 1 failed
 ```
 
-Because you own the loop you can also stop early, time each test case, or race the run against a timeout:
+Because you own the loop you can also stop early or time each test case. Stop it between calls, though:
+`next` is not cancellation safe, so a future that is dropped part way through — raced against a timeout, or
+selected on — loses the test case it had already taken off the queue.
 
 ```rust
 # use doc_assert::DocAssert;
@@ -153,8 +155,8 @@ let report = run.finish(); // the test cases executed so far
 # }
 ```
 
-A failure is a `Failure`, not a string, so you can render your own output — JUnit XML, TAP, JSON — by
-matching on it:
+A failure is a `Failure`, not a string, and it carries only what its `TestCaseId` does not already say, so
+you can render your own output — JUnit XML, TAP, JSON — by matching on it:
 
 ```rust
 use doc_assert::{Failure, Mismatch};

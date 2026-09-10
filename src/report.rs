@@ -20,14 +20,46 @@ use std::fmt::Display;
 /// Displayed the way it appears in a [`Report`], for example `GET /blog (README.md:12)`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TestCaseId {
+    http_method: String,
+    uri: String,
+    doc_path: String,
+    line_number: usize,
+}
+
+impl TestCaseId {
+    pub(crate) fn new(
+        http_method: String,
+        uri: String,
+        doc_path: String,
+        line_number: usize,
+    ) -> Self {
+        Self {
+            http_method,
+            uri,
+            doc_path,
+            line_number,
+        }
+    }
+
     /// HTTP method of the request
-    pub http_method: String,
+    pub fn http_method(&self) -> &str {
+        &self.http_method
+    }
+
     /// URI the request is sent to
-    pub uri: String,
+    pub fn uri(&self) -> &str {
+        &self.uri
+    }
+
     /// Path to the documentation file the test case is defined in
-    pub doc_path: String,
+    pub fn doc_path(&self) -> &str {
+        &self.doc_path
+    }
+
     /// Line number the request is defined at
-    pub line_number: usize,
+    pub fn line_number(&self) -> usize {
+        self.line_number
+    }
 }
 
 impl Display for TestCaseId {
@@ -41,7 +73,11 @@ impl Display for TestCaseId {
 }
 
 /// Reason a test case did not pass.
+///
+/// A `Failure` only carries what the [`TestCaseId`] of the enclosing [`TestCaseResult`]
+/// does not already say, so rendering the two together does not repeat the request.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Failure {
     /// A placeholder in the request or the expected response could not be resolved,
     /// usually because no variable of that name was defined or extracted earlier
@@ -51,29 +87,17 @@ pub enum Failure {
     },
     /// The request could not be sent
     RequestFailed {
-        /// HTTP method of the request
-        http_method: String,
-        /// URI the request was sent to
-        uri: String,
-        /// Line number the request is defined at
-        line_number: usize,
         /// What went wrong while sending it
         reason: String,
     },
     /// The response did not match the one described in the documentation
     ResponseMismatch {
-        /// HTTP method of the request
-        http_method: String,
-        /// URI the request was sent to
-        uri: String,
-        /// Line number the expected response is defined at
+        /// Line number the expected response is defined at, which is not the line the
+        /// request is defined at, see [`TestCaseId::line_number`]
         line_number: usize,
         /// How the response differed
         cause: Mismatch,
     },
-    /// The test case was never executed, which happens when its retry policy
-    /// allows no attempt at all
-    NotExecuted,
 }
 
 impl Display for Failure {
@@ -82,27 +106,10 @@ impl Display for Failure {
             Failure::UnresolvedVariables { input } => {
                 write!(f, "unresolved variable placeholders in {}", input)
             }
-            Failure::RequestFailed {
-                http_method,
-                uri,
-                line_number,
-                reason,
-            } => write!(
-                f,
-                "error executing request {} {} defined at line {}: {}",
-                http_method, uri, line_number, reason
-            ),
-            Failure::ResponseMismatch {
-                http_method,
-                uri,
-                line_number,
-                cause,
-            } => write!(
-                f,
-                "error asserting response from {} {} defined at line {}: {}",
-                http_method, uri, line_number, cause
-            ),
-            Failure::NotExecuted => write!(f, "internal error executing request"),
+            Failure::RequestFailed { reason } => write!(f, "request failed: {}", reason),
+            Failure::ResponseMismatch { line_number, cause } => {
+                write!(f, "response at line {}: {}", line_number, cause)
+            }
         }
     }
 }
@@ -111,6 +118,7 @@ impl std::error::Error for Failure {}
 
 /// How a response differed from the one described in the documentation.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Mismatch {
     /// The status code was not the expected one
     StatusCode {
@@ -250,8 +258,8 @@ impl Display for TestCaseResult {
 /// so it always describes what happened. Use [`Report::passed`] for the verdict.
 ///
 /// Displaying a report renders the whole thing: the number of test cases, one line per
-/// test case, the details of the failures and the verdict. When the test cases are
-/// printed while they are executed, print [`Report::verdict`] instead so that the lines
+/// test case, the details of the failures and the final result. When the test cases are
+/// printed while they are executed, print [`Report::summary`] instead so that the lines
 /// are not repeated.
 ///
 /// # Examples
@@ -289,8 +297,12 @@ impl Report {
         self.results.iter().filter(|r| !r.passed())
     }
 
-    /// Total number of executed test cases
-    pub fn total_count(&self) -> usize {
+    /// Number of test cases that were executed.
+    ///
+    /// A run that was stopped early only reports the test cases it got to, so this is
+    /// not necessarily the number of test cases the documentation defines, which is
+    /// what [`Run::total_count`](crate::Run::total_count) gives.
+    pub fn executed_count(&self) -> usize {
         self.results.len()
     }
 
@@ -301,10 +313,10 @@ impl Report {
 
     /// Number of test cases that failed
     pub fn failed_count(&self) -> usize {
-        self.total_count() - self.passed_count()
+        self.executed_count() - self.passed_count()
     }
 
-    /// Whether every test case passed
+    /// Whether every executed test case passed
     pub fn passed(&self) -> bool {
         self.failed_count() == 0
     }
@@ -314,8 +326,8 @@ impl Report {
     /// This is everything a [`Report`] displays except the number of test cases and the
     /// line of every test case, so it is what is left to print once the test cases have
     /// been printed as they were executed.
-    pub fn verdict(&self) -> Verdict<'_> {
-        Verdict(self)
+    pub fn summary(&self) -> Summary<'_> {
+        Summary(self)
     }
 
     /// Panics with the whole report if any test case failed.
@@ -332,19 +344,19 @@ impl Report {
 
 impl Display for Report {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{} tests", self.total_count())?;
+        writeln!(f, "{} tests", self.executed_count())?;
         for result in &self.results {
             writeln!(f, "{}", result)?;
         }
-        write!(f, "{}", self.verdict())
+        write!(f, "{}", self.summary())
     }
 }
 
-/// The details of the failures followed by the final result, returned by [`Report::verdict`].
+/// The details of the failures followed by the final result, returned by [`Report::summary`].
 #[derive(Debug)]
-pub struct Verdict<'a>(&'a Report);
+pub struct Summary<'a>(&'a Report);
 
-impl Display for Verdict<'_> {
+impl Display for Summary<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let report = self.0;
         if !report.passed() {

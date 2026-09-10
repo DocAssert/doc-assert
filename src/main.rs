@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::convert::From;
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -21,24 +20,6 @@ use serde_json::Value;
 use doc_assert::DocAssert;
 use doc_assert::Error;
 use doc_assert::Variables;
-
-#[doc(hidden)]
-#[macro_export]
-macro_rules! write_to_file {
-    ($writer:expr, $msg:expr) => {
-        if let Err(err) = writeln!($writer, $msg) {
-            eprintln!("Error: {}", err);
-            std::process::exit(Code::INTERNAL_ERROR);
-        }
-    };
-
-    ($writer:expr, $msg:expr, $($arg:tt)*) => {
-        if let Err(err) = writeln!($writer, $msg, $($arg)*) {
-            eprintln!("Error: {}", err);
-            std::process::exit(Code::INTERNAL_ERROR);
-        }
-    };
-}
 
 #[doc(hidden)]
 #[derive(Debug, Clone)]
@@ -54,7 +35,6 @@ impl FromStr for JSONVars {
 }
 
 #[doc(hidden)]
-#[macro_export]
 macro_rules! handle_error {
     ($code:expr, $msg:expr, $($arg:tt)*) => {
         println!($msg, $($arg)*);
@@ -98,18 +78,6 @@ struct Cli {
 async fn main() {
     let cli = Cli::parse();
 
-    match &cli.variables {
-        Some(vars) => {
-            if let Value::String(_) = vars.0 {
-                handle_error!(
-                    Code::INVALID_ARGUMENT,
-                    "Error: Variables must be a JSON object"
-                );
-            }
-        }
-        None => {}
-    }
-
     let variables = match cli.variables {
         Some(vars) => match Variables::from_json(&vars.0) {
             Ok(vars) => vars,
@@ -150,7 +118,7 @@ async fn main() {
     }
 
     let report = run.finish();
-    println!("{}", report.verdict());
+    println!("{}", report.summary());
 
     if report.passed() {
         std::process::exit(Code::SUCCESS);

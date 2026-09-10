@@ -154,6 +154,15 @@ fn get_retry_policy(line: &str) -> Result<RetryPolicy, String> {
         .parse::<u64>()
         .map_err(|e| format!("invalid max_retries: {}", e))?;
 
+    // a policy allowing no attempt at all would define a test case that can never be
+    // executed, so it is rejected here rather than reported as a failure later on
+    if max_retries == 0 {
+        return Err(format!(
+            "max_retries must be at least 1, got 0 in: {}",
+            line
+        ));
+    }
+
     let delay = caps
         .name("delay")
         .ok_or(format!("invalid retry properties: {}", line))?
@@ -267,7 +276,10 @@ fn get_headers_and_body(
 
 #[cfg(test)]
 mod tests {
-    use crate::{domain::RetryPolicy, parser::parse};
+    use crate::{
+        domain::RetryPolicy,
+        parser::{get_retry_policy, parse},
+    };
 
     #[test]
     fn test_parse() {
@@ -318,5 +330,26 @@ mod tests {
                 delay: 4500
             }
         )
+    }
+
+    #[test]
+    fn test_a_retry_policy_allowing_no_attempt_is_rejected() {
+        let err = get_retry_policy("[retry]: # (0, 100)").unwrap_err();
+        assert!(
+            err.contains("max_retries must be at least 1"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_a_retry_policy_of_one_attempt_is_accepted() {
+        assert_eq!(
+            Ok(RetryPolicy {
+                max_retries: 1,
+                delay: 100
+            }),
+            get_retry_policy("[retry]: # (1, 100)")
+        );
     }
 }
