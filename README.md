@@ -123,7 +123,8 @@ async fn fail_fast() {
 ```
 
 Stop the run between calls to `next` rather than racing it against a timeout or selecting on it: a test case
-dropped part way through is lost, even though its request may already have reached the server.
+dropped part way through is abandoned and reported as not run, even though its request may already have reached
+the server.
 
 Failures are structured, so you can inspect them, or render them your own way, by matching on them:
 

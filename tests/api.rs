@@ -16,6 +16,8 @@
 
 mod common;
 
+use std::time::Duration;
+
 use common::{TempDoc, DOC};
 use doc_assert::{DocAssert, Error, Failure, Mismatch};
 
@@ -129,6 +131,27 @@ async fn test_run_stopped_early_reports_what_was_not_run() {
     // nothing failed, but not everything passed either
     assert!(!report.passed());
     assert!(!server.failing.matched_async().await);
+}
+
+#[tokio::test]
+async fn test_test_case_dropped_part_way_through_is_reported_as_not_run() {
+    // accepts connections but never answers, so the request is still in flight when the
+    // future is dropped
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let doc = TempDoc::new(DOC);
+
+    let mut run = DocAssert::new(format!("http://{}", listener.local_addr().unwrap()))
+        .with_doc_path(doc.path())
+        .start()
+        .unwrap();
+
+    let timed_out = tokio::time::timeout(Duration::from_millis(100), run.next()).await;
+    assert!(timed_out.is_err());
+    let report = run.finish();
+
+    assert_eq!(0, report.executed_count());
+    assert_eq!(2, report.not_run_count());
+    assert!(!report.passed());
 }
 
 #[tokio::test]

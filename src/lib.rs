@@ -244,12 +244,13 @@ impl Run {
     ///
     /// # Cancellation
     ///
-    /// This is not cancellation safe. The test case is taken off the queue before the
-    /// request is sent, so dropping the returned future part way through — racing it
-    /// against a timeout, or selecting on it — loses that test case: it is not reported,
-    /// even though its request may already have reached the server, and the variables it
-    /// would have extracted are missing for the test cases after it. Drive it to
-    /// completion, and stop the run between calls.
+    /// This is not cancellation safe. The test case is taken off the queue before its
+    /// request is sent, so dropping the returned future part way through, for instance by
+    /// racing it against a timeout or selecting on it, abandons that test case and the
+    /// next call moves on to the one after it. The abandoned test case is reported as not
+    /// run, so the [`Report`] does not pass, and the variables it would have extracted
+    /// are not defined. Its request may still have reached the server. Drive the future
+    /// to completion, and stop the run between calls.
     pub async fn next(&mut self) -> Option<TestCaseResult> {
         let (id, test_case) = self.pending.next()?;
         Some(self.execute(id, test_case).await)
