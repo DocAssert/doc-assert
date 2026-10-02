@@ -12,507 +12,324 @@
 // limitations under the License.
 
 #![doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"))]
-#![allow(clippy::while_let_on_iterator)]
 
-use crate::{
-    domain::{Request, Response},
-    json_diff::path::{Key, Path},
-};
-use serde_json::Value;
-use std::collections::HashMap;
+use crate::domain::TestCase;
 use std::fmt::Display;
-use std::vec;
+use std::io::Write;
 
 mod domain;
 mod executor;
 mod json_diff;
 mod parser;
+mod report;
+mod variables;
 
-/// Builder for the assertions.
+pub use report::{Failure, Mismatch, Report, TestCaseId, TestCaseResult};
+pub use variables::Variables;
+
+/// Builder for a documentation test run.
 ///
-/// The builder is used to configure the assertions.
+/// Once configured, the run is performed in one of three ways:
 ///
-/// # Examples
-///
-/// ```
-/// # #![allow(unused_mut)]
-/// use doc_assert::DocAssert;
-/// use doc_assert::Variables;
-///
-/// async fn test() {
-///     // Create Variables for values that will be shared between requests and responses
-///     let mut variables = Variables::new();
-///     variables.insert_string("token".to_string(), "abcd".to_string());
-///     // Create a DocAssert builder with the base URL and the path to the documentation file
-///     let mut doc_assert = DocAssert::new()
-///         .with_url("http://localhost:8080")
-///         .with_doc_path("path/to/README.md");
-///     // Execute the assertions
-///     let report = doc_assert.assert().await;
-/// }
-/// ```
-pub struct DocAssert<'a> {
-    url: Option<&'a str>,
-    doc_paths: Vec<&'a str>,
-    pub(crate) variables: Variables,
+/// - [`DocAssert::assert`] prints every test case as it is executed and fails the test
+///   unless all of them passed, which is what a test suite usually wants;
+/// - [`DocAssert::run`] prints nothing and returns the [`Report`];
+/// - [`DocAssert::start`] returns a [`Run`] to execute the test cases one by one.
+#[derive(Debug)]
+pub struct DocAssert {
+    url: String,
+    doc_paths: Vec<String>,
+    variables: Variables,
 }
 
-impl<'a> DocAssert<'a> {
-    /// Constructs a new, empty `DocAssert` builder.
+impl DocAssert {
+    /// Constructs a `DocAssert` builder testing against `url`.
     ///
-    /// The builder is used to configure the assertions.
+    /// `url` is the base URL every request of the documentation is sent to. At least one
+    /// documentation file is also required before the run can start, see
+    /// [`DocAssert::with_doc_path`].
     ///
     /// # Examples
     ///
     /// ```
-    /// # #![allow(unused_mut)]
     /// use doc_assert::DocAssert;
-    /// let mut doc_assert = DocAssert::new();
+    /// let doc_assert = DocAssert::new("http://localhost:8080");
     /// ```
-    pub fn new() -> Self {
+    pub fn new(url: impl Into<String>) -> Self {
         Self {
-            url: None,
+            url: url.into(),
             doc_paths: vec![],
             variables: Variables::new(),
         }
     }
 
-    /// Sets the base URL to test against.
+    /// Adds a documentation file to test.
     ///
-    /// The URL will be used to make the requests.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # #![allow(unused_mut)]
-    /// use doc_assert::DocAssert;
-    /// let mut doc_assert = DocAssert::new().with_url("http://localhost:8080");
-    /// ```
-    pub fn with_url(mut self, url: &'a str) -> Self {
-        self.url = Some(url);
-        self
-    }
-
-    /// Sets the path to the documentation file.
-    ///
-    /// The path will be used to parse the documentation.
+    /// At least one is required. The test cases of every file are executed in the order
+    /// the files were added.
     ///
     /// # Examples
     ///
     /// ```
-    /// # #![allow(unused_mut)]
     /// use doc_assert::DocAssert;
-    /// let mut doc_assert = DocAssert::new().with_doc_path("path/to/README.md");
+    /// let doc_assert = DocAssert::new("http://localhost:8080").with_doc_path("README.md");
     /// ```
-    pub fn with_doc_path(mut self, doc_path: &'a str) -> Self {
-        self.doc_paths.push(doc_path);
+    pub fn with_doc_path(mut self, doc_path: impl Into<String>) -> Self {
+        self.doc_paths.push(doc_path.into());
         self
     }
 
     /// Sets the variables to be used in the assertions.
     ///
-    /// The variables will be used to replace the placeholders in the documentation.
+    /// The variables replace the placeholders in the documentation.
     ///
     /// # Examples
     ///
     /// ```
-    /// # #![allow(unused_mut)]
-    /// use doc_assert::DocAssert;
-    /// use doc_assert::Variables;
+    /// use doc_assert::{DocAssert, Variables};
     ///
     /// let mut variables = Variables::new();
-    /// variables.insert_string("token".to_string(), "abcd".to_string());
-    /// let mut doc_assert = DocAssert::new().with_variables(variables);
+    /// variables.insert("token", "abcd");
+    /// let doc_assert = DocAssert::new("http://localhost:8080").with_variables(variables);
     /// ```
     pub fn with_variables(mut self, variables: Variables) -> Self {
         self.variables = variables;
         self
     }
 
-    /// Execute the assertions
+    /// Executes every test case, printing each one as it is executed, and panics unless
+    /// all of them passed.
     ///
-    /// The assertions will be executed and a report will be returned
+    /// The output is the one of the `doc-assert` binary, see [`Run::print_progress`]. It
+    /// is printed the way `cargo test` expects test output to be, so it is shown when the
+    /// test fails, or as it is produced with `cargo test -- --nocapture`.
+    ///
+    /// # Panics
+    ///
+    /// Panics with the [`Error`] if the run could not be performed, and when any test case
+    /// failed.
     ///
     /// # Examples
     ///
     /// ```
-    /// # #![allow(unused_mut)]
     /// use doc_assert::DocAssert;
+    ///
     /// async fn test() {
-    ///     let mut doc_assert = DocAssert::new()
-    ///         .with_url("http://localhost:8080")
-    ///         .with_doc_path("path/to/README.md");
-    ///     match doc_assert.assert().await {
-    ///         Ok(report) => {
-    ///             // handle success
-    ///         }
-    ///         Err(err) => {
-    ///             // handle error
-    ///         }
-    ///     };
+    ///     DocAssert::new("http://localhost:8080")
+    ///         .with_doc_path("README.md")
+    ///         .assert()
+    ///         .await;
     /// }
     /// ```
-    pub async fn assert(mut self) -> Result<Report, AssertionError> {
-        let url = self.url.take().expect("URL is required");
-        let mut total_count = 0;
-        let mut failed_count = 0;
-        let mut summary = String::new();
-        let mut failures = String::new();
-
-        for doc_path in self.doc_paths {
-            let test_cases = parser::parse(doc_path.to_string())
-                .map_err(|e| AssertionError::ParsingError(e.clone()))?;
-            for tc in test_cases {
-                total_count += 1;
-                let id = format!(
-                    "{} {} ({}:{})",
-                    tc.request.http_method, tc.request.uri, doc_path, tc.request.line_number
-                );
-                match executor::execute(url, tc, &mut self.variables).await {
-                    Ok(_) => summary.push_str(format!("{} ✅\n", id).as_str()),
-                    Err(err) => {
-                        summary.push_str(format!("{} ❌\n", id).as_str());
-                        failures.push_str(format!("-------------\n{}: {}\n", id, err).as_str());
-                        failed_count += 1;
-                    }
-                }
-            }
-        }
-
-        if failed_count == 0 {
-            Ok(Report {
-                total_count,
-                failed_count,
-                summary,
-                failures: None,
-            })
-        } else {
-            Err(AssertionError::TestSuiteError(Report {
-                total_count,
-                failed_count,
-                summary,
-                failures: Some(failures),
-            }))
-        }
-    }
-}
-
-impl<'a> Default for DocAssert<'a> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Report of the assertions
-///
-/// The report contains the total number of tests, the number of failed tests,
-/// a summary of passed and failed tests, and detailed information about
-/// the failed assertions.
-///
-/// # Examples
-///
-/// ```
-/// # #![allow(unused_mut)]
-/// use doc_assert::DocAssert;
-/// use doc_assert::Variables;
-///
-/// async fn test() {
-///     let mut doc_assert = DocAssert::new()
-///         .with_url("http://localhost:8080")
-///         .with_doc_path("path/to/README.md");
-///     match doc_assert.assert().await {
-///         Ok(report) => {
-///             println!("{}", report);
-///         }
-///         Err(err) => {
-///             // handle error
-///         }
-///     };
-/// }
-pub struct Report {
-    /// Total number of tests
-    total_count: usize,
-    /// Number of failed tests
-    failed_count: usize,
-    /// Summary of passed and failed tests
-    summary: String,
-    /// Detailed information about the failed assertions
-    failures: Option<String>,
-}
-
-impl Display for Report {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self.failures {
-            Some(failures) => write!(
-                f,
-                "{} tests\n{}\nfailures:\n{}\ntest result: FAILED. {} passed; {} failed",
-                self.total_count,
-                self.summary,
-                failures,
-                self.total_count - self.failed_count,
-                self.failed_count
-            ),
-            None => write!(
-                f,
-                "{} tests\n{}\ntest result: PASSED. {} passed; 0 failed",
-                self.total_count, self.summary, self.total_count
-            ),
-        }
-    }
-}
-
-/// Error type for DocAssert run
-pub enum AssertionError {
-    /// Error parsing the documentation file
-    ParsingError(String),
-    /// Error executing tests
-    TestSuiteError(Report),
-}
-
-/// Variables to be used in the request and response bodies.
-///
-/// The variables are used to replace placeholders in the request
-/// and response bodies in case some values need to be shared between requests and responses.
-///
-/// # Examples
-///
-/// Variables can be passed one by one with specified type:
-///
-/// ```
-/// # use doc_assert::Variables;
-/// # use serde_json::Value;
-/// let mut variables = Variables::new();
-/// variables.insert_string("name".to_string(), "John".to_string());
-/// variables.insert_int("age".to_string(), 30);
-/// ```
-///
-/// A `Value` can be passed directly:
-///
-/// ```
-/// # use doc_assert::Variables;
-/// # use serde_json::Value;
-/// let mut variables = Variables::new();
-/// variables.insert_value("name".to_string(), Value::String("John".to_string()));
-/// variables.insert_value("age".to_string(), Value::Number(serde_json::Number::from(30)));
-/// ```
-///
-/// Alternatively, they can be passed as a JSON object:
-///
-/// ```
-/// # use doc_assert::Variables;
-/// # use serde_json::Value;
-/// let json = r#"{"name": "John", "age": 30}"#;
-/// let variables = Variables::from_json(&serde_json::from_str(json).unwrap()).unwrap();
-/// ```
-///
-#[derive(Debug, Clone, Default)]
-pub struct Variables {
-    map: HashMap<String, Value>,
-}
-
-impl Variables {
-    /// Constructs a new `Variables`.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use doc_assert::Variables;
-    /// let variables = Variables::new();
-    /// ```
-    pub fn new() -> Self {
-        Self {
-            map: HashMap::new(),
-        }
-    }
-
-    /// Constructs a new `Variables` from a JSON object.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use doc_assert::Variables;
-    /// # use serde_json::Value;
-    /// let json = r#"{"name": "John", "age": 30}"#;
-    /// let variables = Variables::from_json(&serde_json::from_str(json).unwrap()).unwrap();
-    /// ```
-    pub fn from_json(json: &Value) -> Result<Self, String> {
-        let mut map = HashMap::new();
-
-        if let Value::Object(obj) = json {
-            for (key, value) in obj {
-                map.insert(key.clone(), value.clone());
-            }
-        } else {
-            return Err("variables must be an object".to_string());
-        }
-
-        Ok(Self { map })
-    }
-
-    /// Inserts a `Value` into the `Variables`.
-    ///
-    /// This can be useful when more complex types are needed.
-    /// Since `Variables` is a wrapper around `HashMap` if you insert duplicate
-    /// keys the value will be overwritten.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use doc_assert::Variables;
-    /// # use serde_json::Value;
-    /// let mut variables = Variables::new();
-    /// variables.insert_value("name".to_string(), Value::String("John".to_string()));
-    /// ```
-    pub fn insert_value(&mut self, name: String, value: Value) {
-        self.map.insert(name, value);
-    }
-
-    /// Inserts a `String` into the `Variables`.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use doc_assert::Variables;
-    /// let mut variables = Variables::new();
-    /// variables.insert_string("name".to_string(), "John".to_string());
-    /// ```
-    pub fn insert_string(&mut self, name: String, value: String) {
-        self.map.insert(name, Value::String(value));
-    }
-
-    /// Inserts an `i64` into the `Variables`.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use doc_assert::Variables;
-    /// let mut variables = Variables::new();
-    /// variables.insert_int("age".to_string(), 30);
-    /// ```
-    pub fn insert_int(&mut self, name: String, value: i64) {
-        self.map
-            .insert(name, Value::Number(serde_json::Number::from(value)));
-    }
-
-    /// Inserts an `f64` into the `Variables`.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use doc_assert::Variables;
-    /// let mut variables = Variables::new();
-    /// variables.insert_float("age".to_string(), 30.0);
-    /// ```
-    pub fn insert_float(&mut self, name: String, value: f64) {
-        self.map.insert(
-            name,
-            Value::Number(serde_json::Number::from_f64(value).unwrap()),
+    pub async fn assert(self) {
+        let run = match self.start() {
+            Ok(run) => run,
+            Err(err) => panic!("{}", err),
+        };
+        let report = run.print_progress().await;
+        assert!(
+            report.passed(),
+            "{} of {} documentation test cases failed",
+            report.failed_count(),
+            report.total_count()
         );
     }
 
-    /// Inserts a `bool` into the `Variables`.
+    /// Executes every test case and returns the [`Report`], printing nothing.
+    ///
+    /// `Err` means the run could not be performed at all; test cases that failed are
+    /// reported by the [`Report`] itself, see [`Report::passed`].
     ///
     /// # Examples
     ///
     /// ```
-    /// # use doc_assert::Variables;
-    /// let mut variables = Variables::new();
-    /// variables.insert_bool("is_adult".to_string(), true);
+    /// use doc_assert::DocAssert;
+    ///
+    /// async fn test() {
+    ///     let report = DocAssert::new("http://localhost:8080")
+    ///         .with_doc_path("README.md")
+    ///         .run()
+    ///         .await
+    ///         .unwrap();
+    ///
+    ///     println!("{} of {} passed", report.passed_count(), report.total_count());
+    /// }
     /// ```
-    pub fn insert_bool(&mut self, name: String, value: bool) {
-        self.map.insert(name, Value::Bool(value));
+    pub async fn run(self) -> Result<Report, Error> {
+        let mut run = self.start()?;
+        while run.next().await.is_some() {}
+        Ok(run.finish())
     }
 
-    /// Inserts a `null` into the `Variables`.
+    /// Parses the documentation and prepares the run without executing anything yet.
     ///
     /// # Examples
     ///
     /// ```
-    /// # use doc_assert::Variables;
-    /// let mut variables = Variables::new();
-    /// variables.insert_null("name".to_string());
+    /// use doc_assert::DocAssert;
+    ///
+    /// async fn test() {
+    ///     let mut run = DocAssert::new("http://localhost:8080")
+    ///         .with_doc_path("README.md")
+    ///         .start()
+    ///         .unwrap();
+    ///
+    ///     while let Some(result) = run.next().await {
+    ///         if !result.passed() {
+    ///             break; // fail fast
+    ///         }
+    ///     }
+    ///
+    ///     let report = run.finish();
+    /// }
     /// ```
-    pub fn insert_null(&mut self, name: String) {
-        self.map.insert(name, Value::Null);
-    }
+    pub fn start(self) -> Result<Run, Error> {
+        if self.doc_paths.is_empty() {
+            return Err(Error::NoDocuments);
+        }
 
-    pub(crate) fn obtain_from_response(
-        &mut self,
-        response: &Value,
-        variable_templates: &HashMap<String, Path>,
-    ) -> Result<(), String> {
-        for (name, path) in variable_templates {
-            let value = extract_value(path, response).ok_or_else(|| {
-                format!("variable template {} not found in the response body", name)
+        // every documentation file is parsed upfront so that a parsing error is reported
+        // before any request is made and the number of test cases is known in advance
+        let mut pending = vec![];
+        for doc_path in &self.doc_paths {
+            let test_cases = parser::parse(doc_path.clone()).map_err(|reason| Error::Parse {
+                doc_path: doc_path.clone(),
+                reason,
             })?;
-
-            self.map.insert(name.clone(), value);
-        }
-
-        Ok(())
-    }
-
-    fn replace_placeholders(&self, input: &mut String, trim_quotes: bool) -> Result<(), String> {
-        for (name, value) in &self.map {
-            let placeholder = format!("`{}`", name);
-            let value_str = value.to_string();
-
-            let value = if trim_quotes {
-                value_str.trim_matches('"')
-            } else {
-                value_str.as_str()
-            };
-
-            *input = input.replace(&placeholder, value);
-        }
-
-        if input.contains('`') {
-            return Err(format!("unresolved variable placeholders in {}", input));
-        }
-
-        Ok(())
-    }
-
-    pub(crate) fn replace_request_placeholders(&self, input: &mut Request) -> Result<(), String> {
-        self.replace_placeholders(&mut input.uri, true)?;
-
-        if let Some(body) = &mut input.body {
-            self.replace_placeholders(body, false)?;
-        }
-
-        for (_, value) in &mut input.headers.iter_mut() {
-            self.replace_placeholders(value, true)?;
-        }
-
-        Ok(())
-    }
-
-    pub(crate) fn replace_response_placeholders(&self, input: &mut Response) -> Result<(), String> {
-        if let Some(body) = &mut input.body {
-            self.replace_placeholders(body, false)?;
-        }
-
-        for (_, value) in &mut input.headers.iter_mut() {
-            self.replace_placeholders(value, true)?;
-        }
-
-        Ok(())
-    }
-}
-
-fn extract_value(path: &Path, value: &Value) -> Option<Value> {
-    match path {
-        Path::Root => None,
-        Path::Keys(keys) => {
-            let mut current = value;
-            for key in keys {
-                match key {
-                    Key::Field(field) => current = current.get(field)?,
-                    Key::Idx(index) => current = current.get(index)?,
-                    _ => return None,
-                }
+            for test_case in test_cases {
+                let id = TestCaseId::new(
+                    test_case.request.http_method.to_string(),
+                    test_case.request.uri.clone(),
+                    doc_path.clone(),
+                    test_case.request.line_number,
+                );
+                pending.push((id, test_case));
             }
-            Some(current.clone())
+        }
+
+        Ok(Run {
+            url: self.url,
+            variables: self.variables,
+            total_count: pending.len(),
+            pending: pending.into_iter(),
+            results: vec![],
+        })
+    }
+}
+
+/// A run in progress, returned by [`DocAssert::start`].
+///
+/// The test cases are executed one by one, in the order they appear in the documentation,
+/// because a test case may use variables extracted from the responses of the previous
+/// ones.
+///
+/// Dropping a `Run` discards the results of the test cases it executed; call
+/// [`Run::finish`] to get the [`Report`] of the test cases executed so far.
+#[derive(Debug)]
+pub struct Run {
+    url: String,
+    variables: Variables,
+    pending: std::vec::IntoIter<(TestCaseId, TestCase)>,
+    results: Vec<TestCaseResult>,
+    total_count: usize,
+}
+
+impl Run {
+    /// Number of test cases the documentation defines
+    pub fn total_count(&self) -> usize {
+        self.total_count
+    }
+
+    /// Executes the next test case, `None` once every one of them has been executed.
+    ///
+    /// # Cancellation
+    ///
+    /// This is not cancellation safe. The test case is taken off the queue before its
+    /// request is sent, so dropping the returned future part way through, for instance by
+    /// racing it against a timeout or selecting on it, abandons that test case and the
+    /// next call moves on to the one after it. The abandoned test case is reported as not
+    /// run, so the [`Report`] does not pass, and the variables it would have extracted
+    /// are not defined. Its request may still have reached the server. Drive the future
+    /// to completion, and stop the run between calls.
+    pub async fn next(&mut self) -> Option<TestCaseResult> {
+        let (id, test_case) = self.pending.next()?;
+        Some(self.execute(id, test_case).await)
+    }
+
+    /// Executes every remaining test case, printing each one to stdout as it is executed,
+    /// and returns the [`Report`].
+    ///
+    /// The output follows `cargo test`: the number of test cases, then one line per test
+    /// case, printed as soon as it starts and completed with ✅ or ❌ once it is done, and
+    /// finally what a [`Report`] displays after those lines, see [`Report::summary`]:
+    ///
+    /// ```text
+    /// 2 tests
+    /// GET /blog (README.md:12) ✅
+    /// POST /blog (README.md:30) ❌
+    ///
+    /// failures:
+    /// -------------
+    /// POST /blog (README.md:30): response at line 36: expected response code 201, got 500
+    ///
+    /// test result: FAILED. 1 passed; 1 failed
+    /// ```
+    pub async fn print_progress(mut self) -> Report {
+        println!("{} tests", self.total_count);
+        while let Some((id, test_case)) = self.pending.next() {
+            // the test case is named before it is executed so that a slow one, or one
+            // being retried, shows what is being waited for
+            print!("{} ", id);
+            let _ = std::io::stdout().flush();
+            let result = self.execute(id, test_case).await;
+            println!("{}", result.mark());
+        }
+
+        let report = self.finish();
+        println!("{}", report.summary());
+        report
+    }
+
+    /// Returns the [`Report`] of the test cases executed so far.
+    pub fn finish(self) -> Report {
+        Report::new(self.results, self.total_count)
+    }
+
+    async fn execute(&mut self, id: TestCaseId, test_case: TestCase) -> TestCaseResult {
+        let outcome = executor::execute(&self.url, test_case, &mut self.variables).await;
+        let result = TestCaseResult::new(id, outcome);
+        self.results.push(result.clone());
+        result
+    }
+}
+
+/// The run could not be performed.
+///
+/// This is not how a failed test case is reported; a run that executed its test cases
+/// always produces a [`Report`], whether they passed or not.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Error {
+    /// No documentation file was given
+    NoDocuments,
+    /// A documentation file could not be read or parsed
+    Parse {
+        /// Path to the documentation file
+        doc_path: String,
+        /// Why it could not be read or parsed
+        reason: String,
+    },
+}
+
+impl Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::NoDocuments => write!(f, "no documentation file to test"),
+            Error::Parse { doc_path, reason } => {
+                write!(f, "cannot parse {}: {}", doc_path, reason)
+            }
         }
     }
 }
+
+impl std::error::Error for Error {}

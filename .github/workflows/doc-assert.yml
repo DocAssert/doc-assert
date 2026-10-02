@@ -31,11 +31,11 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Lint
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --all-targets --features="binary" -- -D warnings
       - name: Build
         run: cargo build --verbose --features="binary"
       - name: Run tests
-        run: cargo test --verbose --workspace
+        run: cargo test --verbose --workspace --features="binary"
       - name: Start sample-api backend
         working-directory: ./tests/functional
         run: make backend-start

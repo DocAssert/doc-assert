@@ -62,28 +62,85 @@ Once your documentation is prepared, you can run DocAssert from your tests like 
 ```rust
 use doc_assert::DocAssert;
 
-#[cfg(test)]
-mod tests {
-    #[tokio::test]
-    async fn test_docs() {
-        let result = DocAssert::new()
-            .with_url("http://localhost:8080")
-            .with_doc_path("README.md")
-            .assert()
-            .await;
-        match result {
-            Ok(report) => {
-                // handle report
-            }
-            Err(err) => {
-                // handle error
-            }
-        }
+// a test of your own, under `#[tokio::test]`
+async fn test_docs() {
+    DocAssert::new("http://localhost:8080")
+        .with_doc_path("README.md")
+        .assert()
+        .await;
+}
+```
+
+`assert` prints every test case as it is executed, the same way the [command line tool](#using-command-line-tool)
+does, and fails the test unless all of them passed. Like any test output, it is shown when the test fails, or as it
+is printed with `cargo test -- --nocapture`.
+
+If you would rather handle the outcome yourself, `run` hands back a `Report` without printing anything:
+
+```rust
+use doc_assert::DocAssert;
+
+async fn print_failures() {
+    let report = DocAssert::new("http://localhost:8080")
+        .with_doc_path("README.md")
+        .run()
+        .await
+        .unwrap();
+
+    println!("{} of {} passed", report.passed_count(), report.total_count());
+    for (id, failure) in report.failures() {
+        println!("{} failed: {}", id, failure);
     }
 }
 ```
 
-In case of `Err` the result will contain a list of errors with detailed information about what went wrong.
+`run` returns `Err` only when the run could not be performed at all, for instance because a documentation file
+could not be parsed. Test cases that failed are reported by the `Report`, and `Report::passed` tells whether every
+one of them passed.
+
+To handle every test case as soon as it has been executed, drive the run yourself with `start`, which parses the
+documentation and hands back a `Run`. This one stops at the first failure:
+
+```rust
+use doc_assert::DocAssert;
+
+async fn fail_fast() {
+    let mut run = DocAssert::new("http://localhost:8080")
+        .with_doc_path("README.md")
+        .start()
+        .unwrap();
+
+    while let Some(result) = run.next().await {
+        println!("{}", result);
+        if !result.passed() {
+            break;
+        }
+    }
+
+    // the test cases left are reported as not run
+    println!("{}", run.finish().summary());
+}
+```
+
+Stop the run between calls to `next` rather than racing it against a timeout or selecting on it: a test case
+dropped part way through is abandoned and reported as not run, even though its request may already have reached
+the server.
+
+Failures are structured, so you can inspect them, or render them your own way, by matching on them:
+
+```rust
+use doc_assert::{Failure, Mismatch};
+
+fn is_server_error(failure: &Failure) -> bool {
+    matches!(
+        failure,
+        Failure::ResponseMismatch {
+            cause: Mismatch::StatusCode { actual: 500..=599, .. },
+            ..
+        }
+    )
+}
+```
 
 #### Variables
 
@@ -92,27 +149,18 @@ In some case we may need to set some value which will be shared between requests
 We can define variable in the API before we run the tests:
 
 ```rust
-use doc_assert::DocAssert;
+use doc_assert::{DocAssert, Variables};
 
-#[cfg(test)]
-mod tests {
-    #[tokio::test]
-    async fn test_docs() {
-        let result = DocAssert::new()
-            .with_url("http://localhost:8080")
-            .with_doc_path("README.md")
-            .with_variable("auth_token", "some_token")
-            .assert()
-            .await;
-        match result {
-            Ok(report) => {
-                // handle report
-            }
-            Err(err) => {
-                // handle error
-            }
-        }
-    }
+// a test of your own, under `#[tokio::test]`
+async fn test_docs() {
+    let mut variables = Variables::new();
+    variables.insert("auth_token", "some_token");
+
+    DocAssert::new("http://localhost:8080")
+        .with_doc_path("README.md")
+        .with_variables(variables)
+        .assert()
+        .await;
 }
 ```
 
@@ -195,7 +243,9 @@ Content-Type: application/json
 [retry]: # (3,4500)
 ~~~
 
-The first number in the retry policy is the number of retries, and the second number is the delay between retries in milliseconds.
+The first number in the retry policy is the number of attempts, the first one included, and the second number is the
+delay between attempts in milliseconds: `(3,4500)` sends the request up to 3 times, waiting 4.5 seconds after each
+attempt that failed. The number of attempts must be at least 1.
 
 ### Using command line tool
 
@@ -204,6 +254,31 @@ Instead of integrating DocAssert into your tests, you can also use it as a stand
 ```bash
 doc-assert --url http://localhost:8081 --variables '{"auth_token": "some_token"}' README.md
 ```
+
+Every documentation file is parsed before any request is sent. The test cases are then printed as they are executed,
+the way `cargo test` prints its own: each one is named as soon as its request is sent and marked once it is done, so
+a slow or retried request shows what is being waited for. The details of the failures follow at the end:
+
+```text
+2 tests
+GET /blog (README.md:12) ✅
+POST /blog (README.md:30) ❌
+
+failures:
+-------------
+POST /blog (README.md:30): response at line 36: expected response code 201, got 500
+
+test result: FAILED. 1 passed; 1 failed
+```
+
+The exit code tells how the run went, and errors preventing it are printed to stderr:
+
+| Code | Meaning |
+|------|---------|
+| 0    | every test case passed |
+| 2    | invalid arguments, such as no documentation file, or variables that are not a JSON object |
+| 3    | a documentation file could not be read or parsed, in which case no request was sent |
+| 4    | at least one test case failed |
 
 ### Using DocAssert for AI-assisted development
 

@@ -69,14 +69,15 @@ pub(crate) struct Request {
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct RetryPolicy {
-    pub max_retries: u64,
+    /// Number of times the request is sent before giving up, the first time included
+    pub max_attempts: u64,
     pub delay: u64,
 }
 
 impl Default for RetryPolicy {
     fn default() -> Self {
         RetryPolicy {
-            max_retries: 1,
+            max_attempts: 1,
             delay: 0,
         }
     }
@@ -86,8 +87,8 @@ impl Default for RetryPolicy {
 pub(crate) struct Response {
     pub code: u16,
     pub headers: HashMap<String, String>,
-    pub ignore_paths: Vec<String>,
-    pub ignore_orders: Vec<String>,
+    pub ignore_paths: Vec<Path>,
+    pub ignore_orders: Vec<Path>,
     pub body: Option<String>,
     pub line_number: usize,
     pub variables: HashMap<String, Path>,
