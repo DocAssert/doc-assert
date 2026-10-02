@@ -37,12 +37,12 @@ impl FromStr for JSONVars {
 #[doc(hidden)]
 macro_rules! handle_error {
     ($code:expr, $msg:expr, $($arg:tt)*) => {
-        println!($msg, $($arg)*);
+        eprintln!($msg, $($arg)*);
         std::process::exit($code);
     };
 
     ($code:expr, $msg:expr) => {
-        println!($msg);
+        eprintln!($msg);
         std::process::exit($code);
     };
 }
@@ -95,13 +95,13 @@ async fn main() {
 
     for file in cli.files.iter() {
         let Some(file) = file.to_str() else {
-            handle_error!(Code::INVALID_ARGUMENT, "error: Invalid file path");
+            handle_error!(Code::INVALID_ARGUMENT, "Error: invalid file path");
         };
 
         doc_assert = doc_assert.with_doc_path(file);
     }
 
-    let mut run = match doc_assert.start() {
+    let run = match doc_assert.start() {
         Ok(run) => run,
         Err(err @ Error::NoDocuments) => {
             handle_error!(Code::INVALID_ARGUMENT, "Error: {}", err);
@@ -111,17 +111,7 @@ async fn main() {
         }
     };
 
-    // the test cases are printed as they are executed, only the failures and the final
-    // result are left to print once the run is over
-    println!("{} tests", run.total_count());
-    while let Some(result) = run.next().await {
-        println!("{}", result);
-    }
-
-    let report = run.finish();
-    println!("{}", report.summary());
-
-    if report.passed() {
+    if run.print_progress().await.passed() {
         std::process::exit(Code::SUCCESS);
     }
     std::process::exit(Code::DOC_ASSERTION_ERROR);

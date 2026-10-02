@@ -18,8 +18,10 @@ use crate::{
     json_diff::path::{Key, Path},
     report::{Failure, Mismatch},
 };
+use regex::Regex;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// Variables to be used in the request and response bodies.
 ///
@@ -101,19 +103,25 @@ impl Variables {
         self.map.insert(name.into(), value.into());
     }
 
-    pub(crate) fn obtain_from_response(
-        &mut self,
+    /// Extracts the variables the documentation defines from a response body, leaving the
+    /// ones already known untouched: they are only updated once the response passed, see
+    /// [`Variables::extend`].
+    pub(crate) fn extract_from_response(
         response: &Value,
         variable_templates: &HashMap<String, Path>,
-    ) -> Result<(), Mismatch> {
-        for (name, path) in variable_templates {
-            let value = extract_value(path, response)
-                .ok_or_else(|| Mismatch::VariableNotFound { name: name.clone() })?;
+    ) -> Result<HashMap<String, Value>, Mismatch> {
+        variable_templates
+            .iter()
+            .map(|(name, path)| {
+                extract_value(path, response)
+                    .map(|value| (name.clone(), value))
+                    .ok_or_else(|| Mismatch::VariableNotFound { name: name.clone() })
+            })
+            .collect()
+    }
 
-            self.map.insert(name.clone(), value);
-        }
-
-        Ok(())
+    pub(crate) fn extend(&mut self, variables: HashMap<String, Value>) {
+        self.map.extend(variables);
     }
 
     fn replace_placeholders(&self, input: &mut String, trim_quotes: bool) -> Result<(), Failure> {
@@ -130,10 +138,11 @@ impl Variables {
             *input = input.replace(&placeholder, value);
         }
 
-        if input.contains('`') {
-            return Err(Failure::UnresolvedVariables {
-                input: input.clone(),
-            });
+        // only the names are reported: the input may hold the values of other variables,
+        // such as tokens, which should not end up in a report
+        let names = unresolved_placeholders(input);
+        if !names.is_empty() {
+            return Err(Failure::UnresolvedVariables { names });
         }
 
         Ok(())
@@ -169,6 +178,22 @@ impl Variables {
     }
 }
 
+/// Names of the placeholders left in `input`, in the order they appear and without
+/// repetitions.
+fn unresolved_placeholders(input: &str) -> Vec<String> {
+    static PLACEHOLDER: OnceLock<Regex> = OnceLock::new();
+    let placeholder = PLACEHOLDER.get_or_init(|| Regex::new(r"`([^`\s]+)`").unwrap());
+
+    let mut names: Vec<String> = vec![];
+    for caps in placeholder.captures_iter(input) {
+        let name = &caps[1];
+        if !names.iter().any(|n| n == name) {
+            names.push(name.to_string());
+        }
+    }
+    names
+}
+
 fn extract_value(path: &Path, value: &Value) -> Option<Value> {
     match path {
         Path::Root => None,
@@ -183,5 +208,86 @@ fn extract_value(path: &Path, value: &Value) -> Option<Value> {
             }
             Some(current.clone())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use serde_json::{json, Value};
+
+    use super::Variables;
+    use crate::json_diff::path::JSONPath;
+    use crate::report::{Failure, Mismatch};
+
+    #[test]
+    fn test_from_json_accepts_only_an_object() {
+        assert!(Variables::from_json(&json!({"id": 1})).is_some());
+        for json in [json!("id"), json!([1]), json!(1), Value::Null] {
+            assert!(Variables::from_json(&json).is_none(), "{}", json);
+        }
+    }
+
+    #[test]
+    fn test_insert_overwrites_a_variable_of_the_same_name() {
+        let mut variables = Variables::new();
+        variables.insert("id", "x");
+        variables.insert("id", 1);
+
+        let mut input = "/users/`id`".to_string();
+        variables.replace_placeholders(&mut input, true).unwrap();
+        assert_eq!("/users/1", input);
+    }
+
+    #[test]
+    fn test_unresolved_placeholders_are_reported_by_name_only() {
+        let mut variables = Variables::new();
+        variables.insert("token", "secret");
+
+        let mut input = "`token` `id` `name` `id`".to_string();
+        let err = variables
+            .replace_placeholders(&mut input, false)
+            .unwrap_err();
+
+        assert_eq!(
+            Failure::UnresolvedVariables {
+                names: vec!["id".to_string(), "name".to_string()]
+            },
+            err
+        );
+        assert!(!err.to_string().contains("secret"));
+    }
+
+    #[test]
+    fn test_a_lone_backtick_is_not_a_placeholder() {
+        let mut input = "{\"quote\": \"it`s\"}".to_string();
+        assert_eq!(
+            Ok(()),
+            Variables::new().replace_placeholders(&mut input, false)
+        );
+    }
+
+    #[test]
+    fn test_every_variable_or_none_is_extracted_from_a_response() {
+        let templates: HashMap<_, _> = [
+            ("id".to_string(), "$.id".jsonpath().unwrap()),
+            ("name".to_string(), "$.name".jsonpath().unwrap()),
+        ]
+        .into_iter()
+        .collect();
+
+        let extracted =
+            Variables::extract_from_response(&json!({"id": 1, "name": "John"}), &templates)
+                .unwrap();
+        assert_eq!(Some(&json!(1)), extracted.get("id"));
+        assert_eq!(Some(&json!("John")), extracted.get("name"));
+
+        assert_eq!(
+            Err(Mismatch::VariableNotFound {
+                name: "name".to_string()
+            }),
+            Variables::extract_from_response(&json!({"id": 1}), &templates)
+        );
     }
 }

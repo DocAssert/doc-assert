@@ -15,6 +15,7 @@
 
 use crate::domain::TestCase;
 use std::fmt::Display;
+use std::io::Write;
 
 mod domain;
 mod executor;
@@ -23,23 +24,17 @@ mod parser;
 mod report;
 mod variables;
 
-pub use report::{Failure, Mismatch, Report, Summary, TestCaseId, TestCaseResult};
+pub use report::{Failure, Mismatch, Report, TestCaseId, TestCaseResult};
 pub use variables::Variables;
 
 /// Builder for a documentation test run.
 ///
-/// # Examples
+/// Once configured, the run is performed in one of three ways:
 ///
-/// ```
-/// use doc_assert::DocAssert;
-///
-/// async fn test() {
-///     DocAssert::new("http://localhost:8080")
-///         .with_doc_path("README.md")
-///         .assert()
-///         .await;
-/// }
-/// ```
+/// - [`DocAssert::assert`] prints every test case as it is executed and fails the test
+///   unless all of them passed, which is what a test suite usually wants;
+/// - [`DocAssert::run`] prints nothing and returns the [`Report`];
+/// - [`DocAssert::start`] returns a [`Run`] to execute the test cases one by one.
 #[derive(Debug)]
 pub struct DocAssert {
     url: String,
@@ -102,18 +97,17 @@ impl DocAssert {
         self
     }
 
-    /// Executes every test case and panics unless all of them passed.
+    /// Executes every test case, printing each one as it is executed, and panics unless
+    /// all of them passed.
     ///
-    /// This is how `DocAssert` is meant to be used inside a test: anything that goes
-    /// wrong fails the test, whether it is a documentation file that could not be parsed
-    /// or a test case that did not pass. Use [`DocAssert::run`] to get the [`Report`] and
-    /// handle it yourself, or [`DocAssert::start`] to handle every test case as soon as
-    /// it has been executed.
+    /// The output is the one of the `doc-assert` binary, see [`Run::print_progress`]. It
+    /// is printed the way `cargo test` expects test output to be, so it is shown when the
+    /// test fails, or as it is produced with `cargo test -- --nocapture`.
     ///
     /// # Panics
     ///
-    /// Panics if the run could not be performed, or if any test case failed. The whole
-    /// [`Report`] is the panic message.
+    /// Panics with the [`Error`] if the run could not be performed, and when any test case
+    /// failed.
     ///
     /// # Examples
     ///
@@ -127,16 +121,21 @@ impl DocAssert {
     ///         .await;
     /// }
     /// ```
-    pub async fn assert(self) -> Report {
-        let report = match self.run().await {
-            Ok(report) => report,
+    pub async fn assert(self) {
+        let run = match self.start() {
+            Ok(run) => run,
             Err(err) => panic!("{}", err),
         };
-        report.assert_passed();
-        report
+        let report = run.print_progress().await;
+        assert!(
+            report.passed(),
+            "{} of {} documentation test cases failed",
+            report.failed_count(),
+            report.total_count()
+        );
     }
 
-    /// Executes every test case and returns the [`Report`].
+    /// Executes every test case and returns the [`Report`], printing nothing.
     ///
     /// `Err` means the run could not be performed at all; test cases that failed are
     /// reported by the [`Report`] itself, see [`Report::passed`].
@@ -153,7 +152,7 @@ impl DocAssert {
     ///         .await
     ///         .unwrap();
     ///
-    ///     println!("{} of {} passed", report.passed_count(), report.executed_count());
+    ///     println!("{} of {} passed", report.passed_count(), report.total_count());
     /// }
     /// ```
     pub async fn run(self) -> Result<Report, Error> {
@@ -163,9 +162,6 @@ impl DocAssert {
     }
 
     /// Parses the documentation and prepares the run without executing anything yet.
-    ///
-    /// Use this to drive the run yourself and handle every test case as soon as it has
-    /// been executed.
     ///
     /// # Examples
     ///
@@ -178,13 +174,13 @@ impl DocAssert {
     ///         .start()
     ///         .unwrap();
     ///
-    ///     println!("{} tests", run.total_count());
     ///     while let Some(result) = run.next().await {
-    ///         println!("{}", result);
+    ///         if !result.passed() {
+    ///             break; // fail fast
+    ///         }
     ///     }
     ///
     ///     let report = run.finish();
-    ///     println!("{}", report.summary());
     /// }
     /// ```
     pub fn start(self) -> Result<Run, Error> {
@@ -223,13 +219,12 @@ impl DocAssert {
 
 /// A run in progress, returned by [`DocAssert::start`].
 ///
-/// The test cases are executed one by one, as [`Run::next`] is called, so their results
-/// are available while the run is still going on. They are executed in the order they
-/// appear in the documentation because a test case may use variables extracted from the
-/// responses of the previous ones.
+/// The test cases are executed one by one, in the order they appear in the documentation,
+/// because a test case may use variables extracted from the responses of the previous
+/// ones.
 ///
-/// Dropping a `Run` cancels it; the test cases that were already executed are lost with
-/// it, so call [`Run::finish`] to get the [`Report`] of a partial run.
+/// Dropping a `Run` discards the results of the test cases it executed; call
+/// [`Run::finish`] to get the [`Report`] of the test cases executed so far.
 #[derive(Debug)]
 pub struct Run {
     url: String,
@@ -240,17 +235,9 @@ pub struct Run {
 }
 
 impl Run {
-    /// Total number of test cases the documentation defines.
-    ///
-    /// This is how many test cases the run would execute if it were driven to the end;
-    /// a run that is stopped early reports fewer, see [`Report::executed_count`].
+    /// Number of test cases the documentation defines
     pub fn total_count(&self) -> usize {
         self.total_count
-    }
-
-    /// Number of test cases executed so far
-    pub fn completed_count(&self) -> usize {
-        self.results.len()
     }
 
     /// Executes the next test case, `None` once every one of them has been executed.
@@ -259,21 +246,59 @@ impl Run {
     ///
     /// This is not cancellation safe. The test case is taken off the queue before the
     /// request is sent, so dropping the returned future part way through — racing it
-    /// against a timeout, or selecting on it — loses that test case: it is neither
-    /// retried nor reported. Drive it to completion, and stop the run between calls.
+    /// against a timeout, or selecting on it — loses that test case: it is not reported,
+    /// even though its request may already have reached the server, and the variables it
+    /// would have extracted are missing for the test cases after it. Drive it to
+    /// completion, and stop the run between calls.
     pub async fn next(&mut self) -> Option<TestCaseResult> {
         let (id, test_case) = self.pending.next()?;
-        let failure = executor::execute(&self.url, test_case, &mut self.variables)
-            .await
-            .err();
-        let result = TestCaseResult::new(id, failure);
-        self.results.push(result.clone());
-        Some(result)
+        Some(self.execute(id, test_case).await)
+    }
+
+    /// Executes every remaining test case, printing each one to stdout as it is executed,
+    /// and returns the [`Report`].
+    ///
+    /// The output follows `cargo test`: the number of test cases, then one line per test
+    /// case, printed as soon as it starts and completed with ✅ or ❌ once it is done, and
+    /// finally what a [`Report`] displays after those lines, see [`Report::summary`]:
+    ///
+    /// ```text
+    /// 2 tests
+    /// GET /blog (README.md:12) ✅
+    /// POST /blog (README.md:30) ❌
+    ///
+    /// failures:
+    /// -------------
+    /// POST /blog (README.md:30): response at line 36: expected response code 201, got 500
+    ///
+    /// test result: FAILED. 1 passed; 1 failed
+    /// ```
+    pub async fn print_progress(mut self) -> Report {
+        println!("{} tests", self.total_count);
+        while let Some((id, test_case)) = self.pending.next() {
+            // the test case is named before it is executed so that a slow one, or one
+            // being retried, shows what is being waited for
+            print!("{} ", id);
+            let _ = std::io::stdout().flush();
+            let result = self.execute(id, test_case).await;
+            println!("{}", result.mark());
+        }
+
+        let report = self.finish();
+        println!("{}", report.summary());
+        report
     }
 
     /// Returns the [`Report`] of the test cases executed so far.
     pub fn finish(self) -> Report {
-        Report::new(self.results)
+        Report::new(self.results, self.total_count)
+    }
+
+    async fn execute(&mut self, id: TestCaseId, test_case: TestCase) -> TestCaseResult {
+        let outcome = executor::execute(&self.url, test_case, &mut self.variables).await;
+        let result = TestCaseResult::new(id, outcome);
+        self.results.push(result.clone());
+        result
     }
 }
 
@@ -282,6 +307,7 @@ impl Run {
 /// This is not how a failed test case is reported; a run that executed its test cases
 /// always produces a [`Report`], whether they passed or not.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Error {
     /// No documentation file was given
     NoDocuments,
@@ -299,7 +325,7 @@ impl Display for Error {
         match self {
             Error::NoDocuments => write!(f, "no documentation file to test"),
             Error::Parse { doc_path, reason } => {
-                write!(f, "error parsing {}: {}", doc_path, reason)
+                write!(f, "cannot parse {}: {}", doc_path, reason)
             }
         }
     }
