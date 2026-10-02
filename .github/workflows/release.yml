@@ -11,23 +11,36 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: DocAssert
+# Publishes the crate to crates.io when a version tag (e.g. v0.1.2) is pushed.
+# Authentication uses crates.io Trusted Publishing (OIDC), so no long-lived
+# API token is stored in the repository.
+
+name: Release
 
 on:
   push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "**" ]
+    tags: [ "v*" ]
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-    name: lint, build & test
+  publish:
+    name: publish to crates.io
     runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
+      - name: Check tag matches Cargo.toml version
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "doc-assert") | .version')
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match Cargo.toml version v$version"
+            exit 1
+          fi
       - name: Format
         run: cargo fmt --all -- --check
       - name: Lint
@@ -45,3 +58,10 @@ jobs:
       - name: Run sanity functional tests
         working-directory: ./tests/functional
         run: make sanity
+      - name: Authenticate with crates.io
+        uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+      - name: Publish
+        run: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
