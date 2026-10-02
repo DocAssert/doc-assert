@@ -66,8 +66,7 @@ use doc_assert::DocAssert;
 mod tests {
     #[tokio::test]
     async fn test_docs() {
-        DocAssert::new()
-            .with_url("http://localhost:8080")
+        DocAssert::new("http://localhost:8080")
             .with_doc_path("README.md")
             .assert()
             .await;
@@ -81,8 +80,7 @@ outcome yourself, `run` hands it back instead:
 ```rust
 # use doc_assert::DocAssert;
 # async fn test() {
-let report = DocAssert::new()
-    .with_url("http://localhost:8080")
+let report = DocAssert::new("http://localhost:8080")
     .with_doc_path("README.md")
     .run()
     .await
@@ -107,8 +105,7 @@ going on, drive it yourself with `start`, which parses the documentation and han
 ```rust
 # use doc_assert::DocAssert;
 # async fn test() {
-let mut run = DocAssert::new()
-    .with_url("http://localhost:8080")
+let mut run = DocAssert::new("http://localhost:8080")
     .with_doc_path("README.md")
     .start()
     .unwrap();
@@ -145,7 +142,7 @@ selected on — loses the test case it had already taken off the queue.
 ```rust
 # use doc_assert::DocAssert;
 # async fn test() {
-# let mut run = DocAssert::new().with_url("http://localhost:8080").with_doc_path("README.md").start().unwrap();
+# let mut run = DocAssert::new("http://localhost:8080").with_doc_path("README.md").start().unwrap();
 while let Some(result) = run.next().await {
     if !result.passed() {
         break; // fail fast
@@ -188,8 +185,7 @@ mod tests {
         let mut variables = Variables::new();
         variables.insert("auth_token", "some_token");
 
-        DocAssert::new()
-            .with_url("http://localhost:8080")
+        DocAssert::new("http://localhost:8080")
             .with_doc_path("README.md")
             .with_variables(variables)
             .assert()

@@ -267,8 +267,7 @@ impl Display for TestCaseResult {
 /// ```
 /// # use doc_assert::DocAssert;
 /// async fn test() {
-///     let report = DocAssert::new()
-///         .with_url("http://localhost:8080")
+///     let report = DocAssert::new("http://localhost:8080")
 ///         .with_doc_path("README.md")
 ///         .run()
 ///         .await
@@ -375,5 +374,54 @@ impl Display for Summary<'_> {
             report.passed_count(),
             report.failed_count()
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Failure, Mismatch, Report, TestCaseId, TestCaseResult};
+
+    #[test]
+    fn test_report_renders_the_same_thing_as_the_streamed_output() {
+        let report = Report::new(vec![
+            TestCaseResult::new(
+                TestCaseId::new(
+                    "GET".to_string(),
+                    "/blog".to_string(),
+                    "README.md".to_string(),
+                    12,
+                ),
+                None,
+            ),
+            TestCaseResult::new(
+                TestCaseId::new(
+                    "POST".to_string(),
+                    "/blog".to_string(),
+                    "README.md".to_string(),
+                    30,
+                ),
+                Some(Failure::ResponseMismatch {
+                    line_number: 36,
+                    cause: Mismatch::StatusCode {
+                        expected: 201,
+                        actual: 500,
+                    },
+                }),
+            ),
+        ]);
+
+        // what the binary prints line by line has to add up to what `Report` displays
+        let streamed = format!(
+            "{} tests\n{}\n{}\n",
+            report.executed_count(),
+            report
+                .results()
+                .iter()
+                .map(|r| r.to_string())
+                .collect::<Vec<String>>()
+                .join("\n"),
+            report.summary()
+        );
+        assert_eq!(format!("{}\n", report), streamed);
     }
 }

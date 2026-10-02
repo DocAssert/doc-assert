@@ -80,17 +80,18 @@ async fn main() {
 
     let variables = match cli.variables {
         Some(vars) => match Variables::from_json(&vars.0) {
-            Ok(vars) => vars,
-            Err(e) => {
-                handle_error!(Code::INVALID_ARGUMENT, "Error: {}", e);
+            Some(vars) => vars,
+            None => {
+                handle_error!(
+                    Code::INVALID_ARGUMENT,
+                    "Error: Variables must be a JSON object"
+                );
             }
         },
         None => Variables::new(),
     };
 
-    let mut doc_assert = DocAssert::new()
-        .with_url(cli.url.as_str())
-        .with_variables(variables);
+    let mut doc_assert = DocAssert::new(cli.url).with_variables(variables);
 
     for file in cli.files.iter() {
         let Some(file) = file.to_str() else {
@@ -102,7 +103,7 @@ async fn main() {
 
     let mut run = match doc_assert.start() {
         Ok(run) => run,
-        Err(err @ (Error::NoUrl | Error::NoDocuments)) => {
+        Err(err @ Error::NoDocuments) => {
             handle_error!(Code::INVALID_ARGUMENT, "Error: {}", err);
         }
         Err(err) => {

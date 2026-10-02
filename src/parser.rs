@@ -115,7 +115,7 @@ pub(crate) fn parse(path: String) -> Result<Vec<TestCase>, String> {
 
 fn get_code(lines: &mut Enumerate<Lines>) -> String {
     let mut buff = String::new();
-    while let Some(line) = lines.next() {
+    for line in lines {
         if line.1.starts_with("```") {
             break;
         }
