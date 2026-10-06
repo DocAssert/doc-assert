@@ -11,34 +11,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::convert::From;
 use std::path::PathBuf;
 use std::str::FromStr;
 
 use clap::Parser;
 use serde_json::Value;
 
-use doc_assert::AssertionError;
 use doc_assert::DocAssert;
+use doc_assert::Error;
 use doc_assert::Variables;
-
-#[doc(hidden)]
-#[macro_export]
-macro_rules! write_to_file {
-    ($writer:expr, $msg:expr) => {
-        if let Err(err) = writeln!($writer, $msg) {
-            eprintln!("Error: {}", err);
-            std::process::exit(Code::INTERNAL_ERROR);
-        }
-    };
-
-    ($writer:expr, $msg:expr, $($arg:tt)*) => {
-        if let Err(err) = writeln!($writer, $msg, $($arg)*) {
-            eprintln!("Error: {}", err);
-            std::process::exit(Code::INTERNAL_ERROR);
-        }
-    };
-}
 
 #[doc(hidden)]
 #[derive(Debug, Clone)]
@@ -54,15 +35,14 @@ impl FromStr for JSONVars {
 }
 
 #[doc(hidden)]
-#[macro_export]
 macro_rules! handle_error {
     ($code:expr, $msg:expr, $($arg:tt)*) => {
-        println!($msg, $($arg)*);
+        eprintln!($msg, $($arg)*);
         std::process::exit($code);
     };
 
     ($code:expr, $msg:expr) => {
-        println!($msg);
+        eprintln!($msg);
         std::process::exit($code);
     };
 }
@@ -98,54 +78,41 @@ struct Cli {
 async fn main() {
     let cli = Cli::parse();
 
-    match &cli.variables {
-        Some(vars) => {
-            if let Value::String(_) = vars.0 {
+    let variables = match cli.variables {
+        Some(vars) => match Variables::from_json(&vars.0) {
+            Some(vars) => vars,
+            None => {
                 handle_error!(
                     Code::INVALID_ARGUMENT,
                     "Error: Variables must be a JSON object"
                 );
             }
-        }
-        None => {}
-    }
-
-    let variables = match cli.variables {
-        Some(vars) => match Variables::from_json(&vars.0) {
-            Ok(vars) => vars,
-            Err(e) => {
-                handle_error!(Code::INVALID_ARGUMENT, "Error: {}", e);
-            }
         },
         None => Variables::new(),
     };
 
-    let mut doc_assert = DocAssert::new()
-        .with_url(cli.url.as_str())
-        .with_variables(variables);
+    let mut doc_assert = DocAssert::new(cli.url).with_variables(variables);
 
     for file in cli.files.iter() {
         let Some(file) = file.to_str() else {
-            handle_error!(Code::INVALID_ARGUMENT, "error: Invalid file path");
+            handle_error!(Code::INVALID_ARGUMENT, "Error: invalid file path");
         };
 
         doc_assert = doc_assert.with_doc_path(file);
     }
 
-    let result = doc_assert.assert().await;
-
-    match result {
-        Ok(report) => {
-            println!("{}", report);
-            std::process::exit(Code::SUCCESS);
+    let run = match doc_assert.start() {
+        Ok(run) => run,
+        Err(err @ Error::NoDocuments) => {
+            handle_error!(Code::INVALID_ARGUMENT, "Error: {}", err);
         }
-        Err(err) => match err {
-            AssertionError::ParsingError(err) => {
-                handle_error!(Code::DOC_PARSING_ERROR, "Error parsing file: {}", err);
-            }
-            AssertionError::TestSuiteError(report) => {
-                handle_error!(Code::DOC_ASSERTION_ERROR, "{}", report);
-            }
-        },
+        Err(err) => {
+            handle_error!(Code::DOC_PARSING_ERROR, "Error: {}", err);
+        }
+    };
+
+    if run.print_progress().await.passed() {
+        std::process::exit(Code::SUCCESS);
     }
+    std::process::exit(Code::DOC_ASSERTION_ERROR);
 }

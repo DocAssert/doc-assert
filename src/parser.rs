@@ -87,7 +87,8 @@ pub(crate) fn parse(path: String) -> Result<Vec<TestCase>, String> {
             if responses.is_empty() || responses.len() != requests.len() {
                 return Err(format!("misplaced retry at line {}: {}", line_no, line));
             }
-            let retry_policy = get_retry_policy(line)?;
+            let retry_policy = get_retry_policy(line)
+                .map_err(|err| format!("invalid retry policy at line {}: {}", line_no, err))?;
 
             let l = responses.len();
             responses[l - 1].retries = retry_policy;
@@ -115,7 +116,7 @@ pub(crate) fn parse(path: String) -> Result<Vec<TestCase>, String> {
 
 fn get_code(lines: &mut Enumerate<Lines>) -> String {
     let mut buff = String::new();
-    while let Some(line) = lines.next() {
+    for line in lines {
         if line.1.starts_with("```") {
             break;
         }
@@ -124,7 +125,7 @@ fn get_code(lines: &mut Enumerate<Lines>) -> String {
     buff
 }
 
-fn get_ignore_path(line: &str) -> Result<String, String> {
+fn get_ignore_path(line: &str) -> Result<Path, String> {
     let no_whitespace = line
         .chars()
         .filter(|c| !c.is_whitespace())
@@ -133,26 +134,31 @@ fn get_ignore_path(line: &str) -> Result<String, String> {
     path.remove(0);
     path.pop();
 
-    if let Err(e) = path.jsonpath() {
-        return Err(format!("invalid ignore path {}", e));
-    }
-
-    Ok(path)
+    path.jsonpath()
+        .map_err(|e| format!("invalid ignore path {}: {}", path, e))
 }
 
 fn get_retry_policy(line: &str) -> Result<RetryPolicy, String> {
-    let re = Regex::new(r"^\[retry\]:\s#\s\((?<max_retries>\d+),\s*(?<delay>\d+)\)").unwrap();
+    let re = Regex::new(r"^\[retry\]:\s#\s\((?<max_attempts>\d+),\s*(?<delay>\d+)\)").unwrap();
 
     let caps = re
         .captures(line)
         .ok_or(format!("invalid retry properties: {}", line))?;
 
-    let max_retries = caps
-        .name("max_retries")
+    let max_attempts = caps
+        .name("max_attempts")
         .ok_or(format!("invalid retry properties: {}", line))?
         .as_str()
         .parse::<u64>()
-        .map_err(|e| format!("invalid max_retries: {}", e))?;
+        .map_err(|e| format!("invalid number of attempts: {}", e))?;
+
+    // a test case allowing no attempt at all could never be executed
+    if max_attempts == 0 {
+        return Err(format!(
+            "the number of attempts must be at least 1, got 0 in: {}",
+            line
+        ));
+    }
 
     let delay = caps
         .name("delay")
@@ -161,7 +167,10 @@ fn get_retry_policy(line: &str) -> Result<RetryPolicy, String> {
         .parse::<u64>()
         .map_err(|e| format!("invalid delay: {}", e))?;
 
-    Ok(RetryPolicy { max_retries, delay })
+    Ok(RetryPolicy {
+        max_attempts,
+        delay,
+    })
 }
 
 fn get_variable_template(line: &str) -> Result<(String, Path), String> {
@@ -267,7 +276,11 @@ fn get_headers_and_body(
 
 #[cfg(test)]
 mod tests {
-    use crate::{domain::RetryPolicy, parser::parse};
+    use crate::{
+        domain::RetryPolicy,
+        json_diff::path::JSONPath,
+        parser::{get_retry_policy, parse},
+    };
 
     #[test]
     fn test_parse() {
@@ -299,7 +312,10 @@ mod tests {
             test_cases[0].response.body.as_ref().unwrap(),
             "{\"id\": 1,\"name\": \"test\"}"
         );
-        assert_eq!(test_cases[0].response.ignore_paths[0], "$.id".to_string());
+        assert_eq!(
+            test_cases[0].response.ignore_paths[0],
+            "$.id".jsonpath().unwrap()
+        );
 
         assert_eq!(
             test_cases[0]
@@ -314,9 +330,30 @@ mod tests {
         assert_eq!(
             &test_cases[0].response.retries,
             &RetryPolicy {
-                max_retries: 3,
+                max_attempts: 3,
                 delay: 4500
             }
         )
+    }
+
+    #[test]
+    fn test_a_retry_policy_allowing_no_attempt_is_rejected() {
+        let err = get_retry_policy("[retry]: # (0, 100)").unwrap_err();
+        assert!(
+            err.contains("the number of attempts must be at least 1"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_a_retry_policy_of_one_attempt_is_accepted() {
+        assert_eq!(
+            Ok(RetryPolicy {
+                max_attempts: 1,
+                delay: 100
+            }),
+            get_retry_policy("[retry]: # (1, 100)")
+        );
     }
 }
